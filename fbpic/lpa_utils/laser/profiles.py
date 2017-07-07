@@ -7,6 +7,7 @@ It defines a set of common laser profiles
 """
 import numpy as np
 from scipy.constants import c
+from scipy.interpolate import interp1d
 
 def gaussian_profile( z, r, t, w0, ctau, z0, zf, k0, cep_phase=0, phi2_chirp=0,
                       prop=1., boost=None, output_Ez_profile=False ):
@@ -109,6 +110,109 @@ def gaussian_profile( z, r, t, w0, ctau, z0, zf, k0, cep_phase=0, phi2_chirp=0,
     # Get the transverse profile
     profile_Eperp = np.exp(exp_argument) \
         / ( diffract_factor * stretch_factor**0.5 )
+
+    # Get the profile for the Ez fields (to ensure div(E) = 0)
+    # (This uses the approximation lambda0 << ctau for long_profile.
+    # In addition, it uses the fact that, for a linearly polarized laser in
+    # mode m=1: Er = E_perp e^i pol_angle and E_theta = -i E_perp e^i pol_angle
+    # so that div(E) = 0 becomes \partial_z E_z + \partial_r E_perp = 0.)
+    if output_Ez_profile:
+        profile_Ez = 1.j * r * inv_zr / diffract_factor * profile_Eperp
+
+    # Return the profiles
+    if output_Ez_profile is False:
+        return( profile_Eperp.real )
+    else:
+        return( profile_Eperp.real, profile_Ez.real )
+        
+def from_file_profile( profile_file, z, r, t, w0, z0, zf, k0, cep_phase, 
+                       boost=None, output_Ez_profile=False ):
+    """
+    Calculate the profile of a transversally-Gaussian pulse, but longitudinally
+    arbitrary and given by a file.
+
+    If output_Ez_profile is True, then both the profile for Eperp and
+    the profile for Ez are given. (The field Ez is never 0 when there are
+    transverse variations of the intensity, due to div(E)=0 )
+
+    Parameters
+    ----------
+    profile_file: string
+        The absolute path to the file that contains field data
+        The file should contain, t, E_envelope, E_phase
+    
+    z, r: 1darrays or 2darrays (meters)
+        The positions at which to calculate the profile
+        *either in the lab frame or in the boosted frame*
+        (if these positions are boosted-frame positions,
+        a boost object needs to be passed)
+        Both arrays should have the same shape
+
+    t: float (seconds)
+        The time at which to calculate the profile
+
+    w0: float (m)
+        The waist at focus
+
+    z0: float (m)
+        The initial position of the centroid *in the lab frame*
+
+    zf: float (m)
+        The initial position of the focal plane *in the lab frame*
+
+    k0: float (m)
+        The wavenumber *in the lab frame*
+
+    cep_phase: float (rad)
+        The Carrier Enveloppe Phase (CEP), i.e. the phase of the laser
+        oscillation, at the position where the laser enveloppe is maximum.
+
+    boost: a BoostConverter object or None
+        Contains the information about the boosted frame
+
+    output_Ez_profile: bool
+        Whether to also output the Ez profile
+
+    Returns
+    -------
+    If output_Ez_profile is False:
+       an array of reals of the same shape as z and r, containing Eperp
+    If output_Ez_profile is True:
+       a tuple with 2 array of reals of the same shape as z and r
+    """
+    # Calculate the Rayleigh length
+    zr = 0.5*k0*w0**2
+    inv_zr = 1./zr
+
+    # When running in a boosted frame, convert the position and time at
+    # which to find the laser amplitude.
+    if boost is not None:
+        inv_c = 1./c
+        zlab_source = boost.gamma0*( z + (c*boost.beta0)*t )
+        tlab_source = boost.gamma0*( t + (inv_c*boost.beta0)*z )
+        # Overwrite boosted frame values, within the scope of this function
+        z = zlab_source
+        t = tlab_source
+
+    # Lab-frame formula for the laser
+    # Note: this formula is expressed with complex numbers for compactness and
+    # simplicity, but only the real part is used in the end
+
+    # Read the data
+    field_data = np.loadtxt( profile_file )
+    t_data = field_data[:,0]
+    env_data = field_data[:, 1]
+    f_env = interp1d( t_data, env_data, bounds_error=False, fill_value=0. )
+    phase_data = field_data[:, 2]
+    f_phase = interp1d( t_data, phase_data, bounds_error=False, fill_value=0. )
+
+    # Diffraction and stretch_factor
+    diffract_factor = 1. - 1j*(z-zf)*inv_zr
+    # Calculate the argument of the complex exponential
+    exp_argument = 1j*cep_phase - r**2 / (w0**2 * diffract_factor)
+    # Get the transverse profile
+    profile_Eperp = f_env( (z0-z)/c ) * f_phase( (z0-z)/c ) \
+      * np.exp(exp_argument) / ( diffract_factor )
 
     # Get the profile for the Ez fields (to ensure div(E) = 0)
     # (This uses the approximation lambda0 << ctau for long_profile.

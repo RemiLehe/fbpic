@@ -8,12 +8,12 @@ It defines a set of utilities for laser initialization
 import numpy as np
 from scipy.constants import m_e, c, e
 from fbpic.lpa_utils.boosted_frame import BoostConverter
-from .profiles import gaussian_profile
+from .profiles import gaussian_profile, from_file_profile
 from .antenna import LaserAntenna
 
 def add_laser( sim, a0, w0, ctau, z0, zf=None, lambda0=0.8e-6,
                cep_phase=0., phi2_chirp=0., theta_pol=0.,
-               gamma_boost=None, method='direct',
+               gamma_boost=None, method='direct', profile='gaussian',
                fw_propagating=True, update_spectral=True, z0_antenna=None ):
     """
     Introduce a linearly-polarized, Gaussian laser in the simulation
@@ -105,7 +105,8 @@ def add_laser( sim, a0, w0, ctau, z0, zf=None, lambda0=0.8e-6,
     if method == 'direct':
         # Directly add the laser to the interpolation object
         add_laser_direct( sim.fld, E0, w0, ctau, z0, zf, k0, cep_phase,
-            phi2_chirp, theta_pol, fw_propagating, update_spectral, boost )
+            phi2_chirp, theta_pol, fw_propagating,
+            update_spectral, profile, boost)
     elif method == 'antenna':
         dr = sim.fld.interp[0].dr
         Nr = sim.fld.interp[0].Nr
@@ -119,7 +120,7 @@ def add_laser( sim, a0, w0, ctau, z0, zf=None, lambda0=0.8e-6,
 
 
 def add_laser_direct( fld, E0, w0, ctau, z0, zf, k0, cep_phase,
-    phi2_chirp, theta_pol, fw_propagating, update_spectral, boost ):
+    phi2_chirp, theta_pol, fw_propagating, update_spectral, profile, boost ):
     """
     Add a linearly-polarized, Gaussian laser pulse to the Fields object
 
@@ -145,9 +146,14 @@ def add_laser_direct( fld, E0, w0, ctau, z0, zf, k0, cep_phase,
     # in the boosted frame -- if the Fields object was correctly initialized.)
     r, z = np.meshgrid( fld.interp[1].r, fld.interp[1].z )
     # Calculate the laser profile on the mesh
-    profile_Eperp, profile_Ez = gaussian_profile( z, r, 0,
+    if profile=='gaussian':
+        profile_Eperp, profile_Ez = gaussian_profile( z, r, 0,
             w0, ctau, z0, zf, k0, cep_phase, phi2_chirp, prop=prop,
             boost=boost, output_Ez_profile=True )
+    else:
+        # Gives the path to a temporal profile file
+        profile_Eperp, profile_Ez = from_file_profile( profile, z, r, 0,
+            w0, z0, zf, k0, cep_phase, boost=boost, output_Ez_profile=True )
 
     # Add the Er and Et fields to the mode m=1 (linearly polarized laser)
     # (The factor 0.5 is related to the fact that there is a factor 2
