@@ -211,7 +211,7 @@ def from_file_profile( profile_file, z, r, t, w0, z0, zf, k0, cep_phase,
     # Calculate the argument of the complex exponential
     exp_argument = 1j*cep_phase - r**2 / (w0**2 * diffract_factor)
     # Get the transverse profile
-    profile_Eperp = f_env( (z0-z)/c ) * f_phase( (z0-z)/c ) \
+    profile_Eperp = f_env( (z0-z)/c ) * np.exp( 1.j*f_phase( (z0-z)/c ) ) \
       * np.exp(exp_argument) / ( diffract_factor )
 
     # Get the profile for the Ez fields (to ensure div(E) = 0)
