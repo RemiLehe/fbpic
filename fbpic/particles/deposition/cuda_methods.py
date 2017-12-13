@@ -577,6 +577,11 @@ def deposit_rho_gpu_cubic(x, y, z, w, q,
     """
     # Get the 1D CUDA grid
     i = cuda.grid(1)
+    thread_i = cuda.threadIdx.x
+
+    # Allocate shared memory to store the particle shapes
+    shape_factor = cuda.shared.array( (4, 4, DEPOSE_TPB), dtype=np.float64 )
+
     # Deposit the field per cell in parallel (for threads < number of cells)
     if i < prefix_sum.shape[0]:
         # Calculate the cell index in 2D from the 1D threadIdx
@@ -684,6 +689,12 @@ def deposit_rho_gpu_cubic(x, y, z, w, q,
             R_m1_scal = wj * exptheta_m1
             # Compute values in local copies and consider boundaries
             ir0 = int64(math.floor(r_cell)) - 1
+
+            # Calculate shape factors and store them in shared arrays
+            for ir in range(4):
+                for iz in range(4):
+                    shape_factor[ ir, iz, thread_i ] = \
+                        r_shape_cubic(r_cell, ir)*z_shape_cubic(z_cell, iz)
 
             if (ir0 == -2):
                 R_m0_20 += shape_factor[ 0, 0, thread_i ]*R_m0_scal

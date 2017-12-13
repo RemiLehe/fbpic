@@ -29,7 +29,7 @@ if cuda_installed:
     # Load the CUDA methods
     from fbpic.cuda_utils import cuda, cuda_tpb_bpg_1d, cuda_tpb_bpg_2d
     from .push.cuda_methods import push_p_gpu, push_p_ioniz_gpu, push_x_gpu
-    from .deposition.cuda_methods import DEPOSE_TPB, deposit_rho_gpu_linear, 
+    from .deposition.cuda_methods import DEPOSE_TPB, deposit_rho_gpu_linear, \
         deposit_J_gpu_linear, deposit_rho_gpu_cubic, deposit_J_gpu_cubic
     from .gathering.cuda_methods import gather_field_gpu_linear, \
         gather_field_gpu_cubic
