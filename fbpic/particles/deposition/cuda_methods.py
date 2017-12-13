@@ -6,7 +6,7 @@ This file is part of the Fourier-Bessel Particle-In-Cell code (FB-PIC)
 It defines the deposition methods for rho and J for linear and cubic
 order shapes on the GPU using CUDA.
 """
-from numba import cuda, int64
+from numba import cuda, int64, float64
 import math
 from scipy.constants import c
 import numpy as np
@@ -580,7 +580,7 @@ def deposit_rho_gpu_cubic(x, y, z, w, q,
     thread_i = cuda.threadIdx.x
 
     # Allocate shared memory to store the particle shapes
-    shape_factor = cuda.shared.array( (4, 4, DEPOSE_TPB), dtype=np.float64 )
+    shape_factor = cuda.shared.array( (4, 4, DEPOSE_TPB), dtype=float64 )
 
     # Deposit the field per cell in parallel (for threads < number of cells)
     if i < prefix_sum.shape[0]:
@@ -967,7 +967,7 @@ def deposit_J_gpu_cubic(x, y, z, w, q,
     thread_i = cuda.threadIdx.x
 
     # Allocate shared memory to store the particle shapes
-    shape_factor = cuda.shared.array( (4, 4, DEPOSE_TPB), dtype=np.float64 )
+    shape_factor = cuda.shared.array( (4, 4, DEPOSE_TPB), dtype=float64 )
 
     # Deposit the field per cell in parallel (for threads < number of cells)
     if i < prefix_sum.shape[0]:
