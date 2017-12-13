@@ -3,11 +3,28 @@
 # License: 3-Clause-BSD-LBNL
 """
 This file is part of the Fourier-Bessel Particle-In-Cell code (FB-PIC)
-It defines the field gathering methods linear and cubic order shapes 
+It defines the field gathering methods linear and cubic order shapes
 on the GPU using CUDA.
 """
 from numba import cuda, float64, int64
 import math
+
+# Number of threads per block for the deposition kernels
+# (Needs to be known at compile time, for usage of shared memory)
+GATHER_TPB = 64
+
+# Cubic shapes
+@cuda.jit(device=True, inline=True)
+def shape_cubic(cell_position, index):
+    iz = int64(math.floor(cell_position)) - 1
+    if index == 0:
+        return (-1./6.)*((cell_position-iz)-2)**3
+    if index == 1:
+        return (1./6.)*(3*((cell_position-(iz+1))**3)-6*((cell_position-(iz+1))**2)+4)
+    if index == 2:
+        return (1./6.)*(3*(((iz+2)-cell_position)**3)-6*(((iz+2)-cell_position)**2)+4)
+    if index == 3:
+        return (-1./6.)*(((iz+3)-cell_position)-2)**3
 
 # -----------------------
 # Field gathering linear
@@ -382,9 +399,13 @@ def gather_field_gpu_cubic(x, y, z,
         The magnetic fields acting on the particles
         (is modified by this function)
     """
-
     # Get the 1D CUDA grid
     i = cuda.grid(1)
+    thread_i = cuda.threadIdx.x
+
+    # Allocate shared memory to store the particle shapes
+    shape_factor = cuda.shared.array( (4, 4, DEPOSE_TPB), dtype=float64 )
+
     # Deposit the field per cell in parallel
     # (for threads < number of particles)
     if i < x.shape[0]:
@@ -413,27 +434,23 @@ def gather_field_gpu_cubic(x, y, z,
         r_cell = invdr*(rj - rmin) - 0.5
         z_cell = invdz*(zj - zmin) - 0.5
 
-        # Calculate the shape factors
+        # Calculate shape factors and store them in shared arrays
+        for index_r in range(4):
+            for index_z in range(4):
+                shape_factor[ index_r, index_z, thread_i ] = \
+                    r_shape_cubic(r_cell, index_r)*z_shape_cubic(z_cell, index_z)
+
         ir = cuda.local.array((4,), dtype=int64)
-        Sr = cuda.local.array((4,), dtype=float64)
         ir[0] = int64(math.floor(r_cell)) - 1
         ir[1] = ir[0] + 1
         ir[2] = ir[1] + 1
         ir[3] = ir[2] + 1
-        Sr[0] = -1./6. * ((r_cell-ir[0])-2)**3
-        Sr[1] = 1./6. * (3*((r_cell-ir[1])**3)-6*((r_cell-ir[1])**2)+4)
-        Sr[2] = 1./6. * (3*((ir[2]-r_cell)**3)-6*((ir[2]-r_cell)**2)+4)
-        Sr[3] = -1./6. * ((ir[3]-r_cell)-2)**3
         iz = cuda.local.array((4,), dtype=int64)
-        Sz = cuda.local.array((4,), dtype=float64)
         iz[0] = int64(math.floor(z_cell)) - 1
         iz[1] = iz[0] + 1
         iz[2] = iz[1] + 1
         iz[3] = iz[2] + 1
-        Sz[0] = -1./6. * ((z_cell-iz[0])-2)**3
-        Sz[1] = 1./6. * (3*((z_cell-iz[1])**3)-6*((z_cell-iz[1])**2)+4)
-        Sz[2] = 1./6. * (3*((iz[2]-z_cell)**3)-6*((iz[2]-z_cell)**2)+4)
-        Sz[3] = -1./6. * ((iz[3]-z_cell)-2)**3
+
         # Lower and upper periodic boundary for z
         for index_z in range(4):
             if iz[index_z] < 0:
@@ -444,7 +461,8 @@ def gather_field_gpu_cubic(x, y, z,
         for index_r in range(4):
             if ir[index_r] < 0:
                 ir[index_r] = abs(ir[index_r])-1
-                Sr[index_r] = (-1.)*Sr[index_r]
+                for index_z in range(4):
+                    shape_factor[index_r, index_z, thread_i] *= -1.
             if ir[index_r] > Nr - 1:
                 ir[index_r] = Nr - 1
 
@@ -466,13 +484,13 @@ def gather_field_gpu_cubic(x, y, z,
         # Add the fields for mode 0
         for index_r in range(4):
             for index_z in range(4):
-                Fr_m += Sz[index_z]*Sr[index_r]*Er_m0[iz[index_z], ir[index_r]]
-                Ft_m += Sz[index_z]*Sr[index_r]*Et_m0[iz[index_z], ir[index_r]]
+                Fr_m += shape_factor[index_r, index_z]*Er_m0[iz[index_z], ir[index_r]]
+                Ft_m += shape_factor[index_r, index_z]*Et_m0[iz[index_z], ir[index_r]]
                 if Sz[index_z]*Sr[index_r] < 0:
-                    Fz_m += (-1.)*Sz[index_z]*Sr[index_r]* \
+                    Fz_m += (-1.)*shape_factor[index_r, index_z]* \
                         Ez_m0[iz[index_z], ir[index_r]]
                 else:
-                    Fz_m += Sz[index_z]*Sr[index_r]* \
+                    Fz_m += shape_factor[index_r, index_z]* \
                         Ez_m0[iz[index_z], ir[index_r]]
 
         Fr += (Fr_m*exptheta_m0).real
@@ -490,16 +508,16 @@ def gather_field_gpu_cubic(x, y, z,
         for index_r in range(4):
             for index_z in range(4):
                 if Sz[index_z]*Sr[index_r] < 0:
-                    Fr_m += (-1.)*Sz[index_z]*Sr[index_r]* \
+                    Fr_m += (-1.)*shape_factor[index_r, index_z]* \
                                 Er_m1[iz[index_z], ir[index_r]]
-                    Ft_m += (-1.)*Sz[index_z]*Sr[index_r]* \
+                    Ft_m += (-1.)*shape_factor[index_r, index_z]* \
                                 Et_m1[iz[index_z], ir[index_r]]
                 else:
-                    Fr_m += Sz[index_z]*Sr[index_r]* \
+                    Fr_m += shape_factor[index_r, index_z]* \
                                 Er_m1[iz[index_z], ir[index_r]]
-                    Ft_m += Sz[index_z]*Sr[index_r]* \
+                    Ft_m += shape_factor[index_r, index_z]* \
                                 Et_m1[iz[index_z], ir[index_r]]
-                Fz_m += Sz[index_z]*Sr[index_r]*Ez_m1[iz[index_z], ir[index_r]]
+                Fz_m += shape_factor[index_r, index_z]*Ez_m1[iz[index_z], ir[index_r]]
 
         # Add the fields from the mode 1
         Fr += 2*(Fr_m*exptheta_m1).real
@@ -530,15 +548,15 @@ def gather_field_gpu_cubic(x, y, z,
         # Add the fields for mode 0
         for index_r in range(4):
             for index_z in range(4):
-                Fr_m += Sz[index_z]*Sr[index_r]* \
+                Fr_m += shape_factor[index_r, index_z]* \
                     Br_m0[iz[index_z], ir[index_r]]
-                Ft_m += Sz[index_z]*Sr[index_r]* \
+                Ft_m += shape_factor[index_r, index_z]* \
                     Bt_m0[iz[index_z], ir[index_r]]
                 if Sz[index_z]*Sr[index_r] < 0:
-                    Fz_m += (-1.)*Sz[index_z]*Sr[index_r]* \
+                    Fz_m += (-1.)*shape_factor[index_r, index_z]* \
                         Bz_m0[iz[index_z], ir[index_r]]
                 else:
-                    Fz_m += Sz[index_z]*Sr[index_r]* \
+                    Fz_m += shape_factor[index_r, index_z]* \
                         Bz_m0[iz[index_z], ir[index_r]]
 
         # Add the fields from the mode 0
@@ -558,16 +576,16 @@ def gather_field_gpu_cubic(x, y, z,
         for index_r in range(4):
             for index_z in range(4):
                 if Sz[index_z]*Sr[index_r] < 0:
-                    Fr_m += (-1.)*Sz[index_z]*Sr[index_r]* \
+                    Fr_m += (-1.)*shape_factor[index_r, index_z]* \
                         Br_m1[iz[index_z], ir[index_r]]
-                    Ft_m += (-1.)*Sz[index_z]*Sr[index_r]* \
+                    Ft_m += (-1.)*shape_factor[index_r, index_z]* \
                         Bt_m1[iz[index_z], ir[index_r]]
                 else:
-                    Fr_m += Sz[index_z]*Sr[index_r]* \
+                    Fr_m += shape_factor[index_r, index_z]* \
                         Br_m1[iz[index_z], ir[index_r]]
-                    Ft_m += Sz[index_z]*Sr[index_r]* \
+                    Ft_m += shape_factor[index_r, index_z]* \
                         Bt_m1[iz[index_z], ir[index_r]]
-                Fz_m += Sz[index_z]*Sr[index_r]*Bz_m1[iz[index_z], ir[index_r]]
+                Fz_m += shape_factor[index_r, index_z]*Bz_m1[iz[index_z], ir[index_r]]
 
         # Add the fields from the mode 1
         Fr += 2*(Fr_m*exptheta_m1).real

@@ -31,7 +31,7 @@ if cuda_installed:
     from .push.cuda_methods import push_p_gpu, push_p_ioniz_gpu, push_x_gpu
     from .deposition.cuda_methods import DEPOSE_TPB, deposit_rho_gpu_linear, \
         deposit_J_gpu_linear, deposit_rho_gpu_cubic, deposit_J_gpu_cubic
-    from .gathering.cuda_methods import gather_field_gpu_linear, \
+    from .gathering.cuda_methods import GATHER_TPB, gather_field_gpu_linear, \
         gather_field_gpu_cubic
     from .utilities.cuda_sorting import write_sorting_buffer, \
         get_cell_idx_per_particle, sort_particles_per_cell, \
