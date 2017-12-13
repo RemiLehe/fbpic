@@ -29,7 +29,7 @@ if cuda_installed:
     # Load the CUDA methods
     from fbpic.cuda_utils import cuda, cuda_tpb_bpg_1d, cuda_tpb_bpg_2d
     from .push.cuda_methods import push_p_gpu, push_p_ioniz_gpu, push_x_gpu
-    from .deposition.cuda_methods import deposit_rho_gpu_linear, \
+    from .deposition.cuda_methods import DEPOSE_TPB, deposit_rho_gpu_linear, 
         deposit_J_gpu_linear, deposit_rho_gpu_cubic, deposit_J_gpu_cubic
     from .gathering.cuda_methods import gather_field_gpu_linear, \
         gather_field_gpu_cubic
@@ -512,7 +512,8 @@ class Particles(object) :
         # GPU (CUDA) version
         if self.use_cuda:
             # Get the threads per block and the blocks per grid
-            dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( self.Ntot, TPB=64 )
+            dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d(
+                                            self.Ntot, TPB=DEPOSE_TPB )
             # Call the CUDA Kernel for the gathering of E and B Fields
             # for Mode 0 and 1 only.
             if self.particle_shape == 'linear':
