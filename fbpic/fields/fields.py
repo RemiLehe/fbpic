@@ -161,7 +161,7 @@ class Fields(object) :
                 kz_true, self.interp[m].dz, self.interp[m].dr,
                 use_cuda=self.use_cuda ) )
             self.psatd.append( PsatdCoeffs( self.spect[m].kz,
-                                self.spect[m].kr, m, dt, Nz, Nr,
+                                self.spect[m].kr, m, dt, 
                                 V=self.v_comoving,
                                 use_galilean=self.use_galilean,
                                 use_cuda=self.use_cuda ) )
@@ -620,16 +620,21 @@ class InterpolationGrid(object) :
         self.invvol = 1./vol
 
         # Allocate the fields arrays
-        self.Er = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Et = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Ez = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Br = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Bt = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Bz = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Jr = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Jt = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Jz = np.zeros( (Nz, Nr), dtype='complex' )
-        self.rho = np.zeros( (Nz, Nr), dtype='complex' )
+        if m==0:
+            # For mode m=0, the interpolation grid is represented by reals
+            data_type = np.float64
+        else:
+            data_type = np.complex128
+        self.Er = np.zeros( (Nz, Nr), dtype=data_type )
+        self.Et = np.zeros( (Nz, Nr), dtype=data_type )
+        self.Ez = np.zeros( (Nz, Nr), dtype=data_type )
+        self.Br = np.zeros( (Nz, Nr), dtype=data_type )
+        self.Bt = np.zeros( (Nz, Nr), dtype=data_type )
+        self.Bz = np.zeros( (Nz, Nr), dtype=data_type )
+        self.Jr = np.zeros( (Nz, Nr), dtype=data_type )
+        self.Jt = np.zeros( (Nz, Nr), dtype=data_type )
+        self.Jz = np.zeros( (Nz, Nr), dtype=data_type )
+        self.rho = np.zeros( (Nz, Nr), dtype=data_type )
 
         # Check whether the GPU should be used
         self.use_cuda = use_cuda
@@ -767,11 +772,24 @@ class SpectralGrid(object) :
         use_cuda : bool, optional
             Wether to use the GPU or not
         """
-        # Register the arrays and their length
-        Nz = len(kz_modified)
-        Nr = len(kr)
-        self.Nr = Nr
-        self.Nz = Nz
+        # Get array lengths
+        N_kz = len(kz_modified)
+        N_kr = len(kr)
+        # For mode 0, the interpolation space is represented by reals and
+        # thus the spectral space is represented by only the positive kz
+        if m==0:
+            N_kz = int(N_kz/2) + 1
+            # Restrict the kz_modified to the first half (positive kz)
+            assert np.all(kz_modified[:N_kz] >= 0)
+            assert np.all(kz_modified[N_kz:] <= 0)
+            kz_modified = kz_modified[:N_kz]
+            # Restrict the kz_true to the first half (positive kz)
+            assert np.all(kz_true[:N_kz] >= 0)
+            assert np.all(kz_true[N_kz:] <= 0)
+            kz_true = kz_true[:N_kz]
+        # Register the array length
+        self.N_kr = N_kr
+        self.N_kz = N_kz
         self.m = m
 
         # Find the limits of the grid (useful for plotting ; use the true kz)
@@ -781,17 +799,17 @@ class SpectralGrid(object) :
         self.krmax = kr.max()
 
         # Allocate the fields arrays
-        self.Ep = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Em = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Ez = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Bp = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Bm = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Bz = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Jp = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Jm = np.zeros( (Nz, Nr), dtype='complex' )
-        self.Jz = np.zeros( (Nz, Nr), dtype='complex' )
-        self.rho_prev = np.zeros( (Nz, Nr), dtype='complex' )
-        self.rho_next = np.zeros( (Nz, Nr), dtype='complex' )
+        self.Ep = np.zeros( (N_kz, N_kr), dtype='complex' )
+        self.Em = np.zeros( (N_kz, N_kr), dtype='complex' )
+        self.Ez = np.zeros( (N_kz, N_kr), dtype='complex' )
+        self.Bp = np.zeros( (N_kz, N_kr), dtype='complex' )
+        self.Bm = np.zeros( (N_kz, N_kr), dtype='complex' )
+        self.Bz = np.zeros( (N_kz, N_kr), dtype='complex' )
+        self.Jp = np.zeros( (N_kz, N_kr), dtype='complex' )
+        self.Jm = np.zeros( (N_kz, N_kr), dtype='complex' )
+        self.Jz = np.zeros( (N_kz, N_kr), dtype='complex' )
+        self.rho_prev = np.zeros( (N_kz, N_kr), dtype='complex' )
+        self.rho_next = np.zeros( (N_kz, N_kr), dtype='complex' )
 
         # Auxiliary arrays
         # - for the field solve
@@ -874,35 +892,35 @@ class SpectralGrid(object) :
 
         if self.use_cuda :
             # Obtain the cuda grid
-            dim_grid, dim_block = cuda_tpb_bpg_2d( self.Nz, self.Nr)
+            dim_grid, dim_block = cuda_tpb_bpg_2d( self.N_kz, self.N_kr)
             # Correct the currents on the GPU
             if ps.V is None:
                 # With standard PSATD algorithm
                 cuda_correct_currents_standard[dim_grid, dim_block](
                     self.rho_prev, self.rho_next, self.Jp, self.Jm, self.Jz,
                     self.d_kz, self.d_kr, self.d_inv_k2,
-                    inv_dt, self.Nz, self.Nr )
+                    inv_dt, self.N_kz, self.N_kr )
             else:
                 # With Galilean/comoving algorithm
                 cuda_correct_currents_comoving[dim_grid, dim_block](
                     self.rho_prev, self.rho_next, self.Jp, self.Jm, self.Jz,
                     self.d_kz, self.d_kr, self.d_inv_k2,
                     ps.d_j_corr_coef, ps.d_T_eb, ps.d_T_cc,
-                    inv_dt, self.Nz, self.Nr)
+                    inv_dt, self.N_kz, self.N_kr)
         else :
             # Correct the currents on the CPU
             if ps.V is None:
                 # With standard PSATD algorithm
                 numba_correct_currents_standard(
                     self.rho_prev, self.rho_next, self.Jp, self.Jm, self.Jz,
-                    self.kz, self.kr, self.inv_k2, inv_dt, self.Nz, self.Nr )
+                    self.kz, self.kr, self.inv_k2, inv_dt, self.N_kz, self.N_kr )
             else:
                 # With Galilean/comoving algorithm
                 numba_correct_currents_comoving(
                     self.rho_prev, self.rho_next, self.Jp, self.Jm, self.Jz,
                     self.kz, self.kr, self.inv_k2,
                     ps.j_corr_coef, ps.T_eb, ps.T_cc,
-                    inv_dt, self.Nz, self.Nr)
+                    inv_dt, self.N_kz, self.N_kr)
 
     def correct_divE(self) :
         """
@@ -944,7 +962,7 @@ class SpectralGrid(object) :
 
         if self.use_cuda :
             # Obtain the cuda grid
-            dim_grid, dim_block = cuda_tpb_bpg_2d( self.Nz, self.Nr)
+            dim_grid, dim_block = cuda_tpb_bpg_2d( self.N_kz, self.N_kr)
             # Push the fields on the GPU
             if ps.V is None:
                 # With the standard PSATD algorithm
@@ -953,7 +971,7 @@ class SpectralGrid(object) :
                     self.Jp, self.Jm, self.Jz, self.rho_prev, self.rho_next,
                     ps.d_rho_prev_coef, ps.d_rho_next_coef, ps.d_j_coef,
                     ps.d_C, ps.d_S_w, self.d_kr, self.d_kz, ps.dt,
-                    use_true_rho, self.Nz, self.Nr )
+                    use_true_rho, self.N_kz, self.N_kr )
             else:
                 # With the Galilean/comoving algorithm
                 cuda_push_eb_comoving[dim_grid, dim_block](
@@ -962,7 +980,7 @@ class SpectralGrid(object) :
                     ps.d_rho_prev_coef, ps.d_rho_next_coef, ps.d_j_coef,
                     ps.d_C, ps.d_S_w, ps.d_T_eb, ps.d_T_cc, ps.d_T_rho,
                     self.d_kr, self.d_kz, ps.dt, ps.V,
-                    use_true_rho, self.Nz, self.Nr )
+                    use_true_rho, self.N_kz, self.N_kr )
         else :
             # Push the fields on the CPU
             if ps.V is None:
@@ -972,7 +990,7 @@ class SpectralGrid(object) :
                     self.Jp, self.Jm, self.Jz, self.rho_prev, self.rho_next,
                     ps.rho_prev_coef, ps.rho_next_coef, ps.j_coef,
                     ps.C, ps.S_w, self.kr, self.kz, ps.dt,
-                    use_true_rho, self.Nz, self.Nr )
+                    use_true_rho, self.N_kz, self.N_kr )
             else:
                 # With the Galilean/comoving algorithm
                 numba_push_eb_comoving(
@@ -981,7 +999,7 @@ class SpectralGrid(object) :
                     ps.rho_prev_coef, ps.rho_next_coef, ps.j_coef,
                     ps.C, ps.S_w, ps.T_eb, ps.T_cc, ps.T_rho,
                     self.kr, self.kz, ps.dt, ps.V,
-                    use_true_rho, self.Nz, self.Nr )
+                    use_true_rho, self.N_kz, self.N_kr )
 
     def push_rho(self) :
         """
@@ -990,10 +1008,10 @@ class SpectralGrid(object) :
         """
         if self.use_cuda :
             # Obtain the cuda grid
-            dim_grid, dim_block = cuda_tpb_bpg_2d( self.Nz, self.Nr)
+            dim_grid, dim_block = cuda_tpb_bpg_2d( self.N_kz, self.N_kr)
             # Push the fields on the GPU
             cuda_push_rho[dim_grid, dim_block](
-                self.rho_prev, self.rho_next, self.Nz, self.Nr )
+                self.rho_prev, self.rho_next, self.N_kz, self.N_kr )
         else :
             # Push the fields on the CPU
             self.rho_prev[:,:] = self.rho_next[:,:]
@@ -1011,23 +1029,23 @@ class SpectralGrid(object) :
         """
         if self.use_cuda :
             # Obtain the cuda grid
-            dim_grid, dim_block = cuda_tpb_bpg_2d( self.Nz, self.Nr)
+            dim_grid, dim_block = cuda_tpb_bpg_2d( self.N_kz, self.N_kr)
             # Filter fields on the GPU
             if fieldtype == 'rho_prev' :
                 cuda_filter_scalar[dim_grid, dim_block](
-                    self.rho_prev, self.d_filter_array, self.Nz, self.Nr )
+                    self.rho_prev, self.d_filter_array, self.N_kz, self.N_kr )
             elif fieldtype == 'rho_next' :
                 cuda_filter_scalar[dim_grid, dim_block](
-                    self.rho_next, self.d_filter_array, self.Nz, self.Nr )
+                    self.rho_next, self.d_filter_array, self.N_kz, self.N_kr )
             elif fieldtype == 'J' :
                 cuda_filter_vector[dim_grid, dim_block]( self.Jp, self.Jm,
-                        self.Jz, self.d_filter_array, self.Nz, self.Nr)
+                        self.Jz, self.d_filter_array, self.N_kz, self.N_kr)
             elif fieldtype == 'E' :
                 cuda_filter_vector[dim_grid, dim_block]( self.Ep, self.Em,
-                        self.Ez, self.d_filter_array, self.Nz, self.Nr)
+                        self.Ez, self.d_filter_array, self.N_kz, self.N_kr)
             elif fieldtype == 'B' :
                 cuda_filter_vector[dim_grid, dim_block]( self.Bp, self.Bm,
-                        self.Bz, self.d_filter_array, self.Nz, self.Nr)
+                        self.Bz, self.d_filter_array, self.N_kz, self.N_kr)
             else :
                 raise ValueError('Invalid string for fieldtype: %s'%fieldtype)
         else :
@@ -1113,7 +1131,7 @@ class PsatdCoeffs(object) :
     Contains the coefficients of the PSATD scheme for a given mode.
     """
 
-    def __init__( self, kz, kr, m, dt, Nz, Nr, V=None,
+    def __init__( self, kz, kr, m, dt, V=None,
                   use_galilean=False, use_cuda=False ) :
         """
         Allocates the coefficients matrices for the psatd scheme.
