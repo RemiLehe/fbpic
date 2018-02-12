@@ -999,10 +999,19 @@ class BoundaryCommunicator(object):
         if array is not None:
             assert array.shape[0] == Nz_global
 
+        # Get the type of the array, by broadcasting it from the
+        # proc that owns the data (`root`)
+        if self.rank == root:
+            data_type = array.dtype
+        else:
+            data_type = None
+        if self.size > 1:
+            data_type = self.mpi_comm.bcast( data_type )
+
         # Create empty array having the shape of the local domain
         Nz_local, iz_start_local = self.get_Nz_and_iz(
             local=True, with_damp=with_damp, with_guard=False, rank=self.rank )
-        scattered_array = np.zeros((Nz_local, self.Nr), dtype=array.dtype )
+        scattered_array = np.zeros((Nz_local, self.Nr), dtype=data_type )
 
         # Then send the arrays
         if self.size > 1:
