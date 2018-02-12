@@ -38,7 +38,7 @@ class SpectralTransformer(object) :
         converts a vector field from the interpolation to the spectral grid
     """
 
-    def __init__(self, Nz, Nr, m, rmax, use_cuda=False ) :
+    def __init__(self, Nz, Nr, N_kz, m, rmax, use_cuda=False ) :
         """
         Initializes the dht and fft attributes, which contain auxiliary
         matrices allowing to transform the fields quickly
@@ -46,7 +46,13 @@ class SpectralTransformer(object) :
         Parameters
         ----------
         Nz, Nr : int
-            Number of points along z and r respectively
+            Number of grid points along z and r respectively
+
+        N_kz: int
+            Number of points in k space, along the z axis
+            (For modes m>0, N_kz is equal to Nz ; but for mode m=0,
+            N_kz is about half of Nz, because the interpolation grid
+            can be represented by real numbers.)
 
         m : int
             Index of the mode (needed for the Hankel transform)
@@ -63,23 +69,23 @@ class SpectralTransformer(object) :
             self.dim_grid, self.dim_block = cuda_tpb_bpg_2d( Nz, Nr)
 
         # Initialize the DHT (local implementation, see hankel.py)
-        self.dht0 = DHT(  m, m, Nr, Nz, rmax, use_cuda=self.use_cuda )
-        self.dhtp = DHT(m+1, m, Nr, Nz, rmax, use_cuda=self.use_cuda )
-        self.dhtm = DHT(m-1, m, Nr, Nz, rmax, use_cuda=self.use_cuda )
+        self.dht0 = DHT(  m, m, Nr, N_kz, rmax, use_cuda=self.use_cuda )
+        self.dhtp = DHT(m+1, m, Nr, N_kz, rmax, use_cuda=self.use_cuda )
+        self.dhtm = DHT(m-1, m, Nr, N_kz, rmax, use_cuda=self.use_cuda )
 
         # Initialize the FFT
-        self.fft = FFT( Nr, Nz, use_cuda=self.use_cuda )
+        self.fft = FFT( Nr, Nz, N_kz, m, use_cuda=self.use_cuda )
 
         # Initialize the spectral buffers
         if self.use_cuda:
             self.spect_buffer_r = cuda.device_array(
-                (Nz, Nr), dtype=np.complex128)
+                (N_kz, Nr), dtype=np.complex128)
             self.spect_buffer_t = cuda.device_array(
-                (Nz, Nr), dtype=np.complex128)
+                (N_kz, Nr), dtype=np.complex128)
         else:
             # Initialize the spectral buffers
-            self.spect_buffer_r = np.zeros( (Nz, Nr), dtype=np.complex128 )
-            self.spect_buffer_t = np.zeros( (Nz, Nr), dtype=np.complex128 )
+            self.spect_buffer_r = np.zeros( (N_kz, Nr), dtype=np.complex128 )
+            self.spect_buffer_t = np.zeros( (N_kz, Nr), dtype=np.complex128 )
 
         # Different names for same object (for economy of memory)
         self.spect_buffer_p = self.spect_buffer_r

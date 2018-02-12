@@ -124,14 +124,6 @@ class Fields(object) :
         dz = (zmax-zmin)/Nz
         z = dz * ( np.arange( 0, Nz ) + 0.5 ) + zmin
 
-        # Create the list of the transformers, which convert the fields
-        # back and forth between the spatial and spectral grid
-        # (one object per azimuthal mode)
-        self.trans = []
-        for m in range(Nm) :
-            self.trans.append( SpectralTransformer(
-                Nz, Nr, m, rmax, use_cuda=self.use_cuda ) )
-
         # Create the interpolation grid for each modes
         # (one grid per azimuthal mode)
         self.interp = [ ]
@@ -161,10 +153,18 @@ class Fields(object) :
                 kz_true, self.interp[m].dz, self.interp[m].dr,
                 use_cuda=self.use_cuda ) )
             self.psatd.append( PsatdCoeffs( self.spect[m].kz,
-                                self.spect[m].kr, m, dt, 
+                                self.spect[m].kr, m, dt,
                                 V=self.v_comoving,
                                 use_galilean=self.use_galilean,
                                 use_cuda=self.use_cuda ) )
+
+        # Create the list of the transformers, which convert the fields
+        # back and forth between the spatial and spectral grid
+        # (one object per azimuthal mode)
+        self.trans = []
+        for m in range(Nm) :
+            self.trans.append( SpectralTransformer( Nz, Nr,
+                self.spect[m].N_kz, m, rmax, use_cuda=self.use_cuda ) )
 
         # Record flags that indicates whether, for the sources *in
         # spectral space*, the guard cells have been exchanged via MPI
