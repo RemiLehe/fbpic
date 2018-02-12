@@ -1002,7 +1002,7 @@ class BoundaryCommunicator(object):
         # Create empty array having the shape of the local domain
         Nz_local, iz_start_local = self.get_Nz_and_iz(
             local=True, with_damp=with_damp, with_guard=False, rank=self.rank )
-        scattered_array = np.zeros((Nz_local, self.Nr), dtype=np.complex)
+        scattered_array = np.zeros((Nz_local, self.Nr), dtype=array.dtype )
 
         # Then send the arrays
         if self.size > 1:

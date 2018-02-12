@@ -47,9 +47,14 @@ def add_laser_direct( sim, laser_profile, fw_propagating, boost ):
     saved_Et = []
     for m in range(sim.fld.Nm):
         saved_Er.append( sim.fld.interp[m].Er.copy() )
-        sim.fld.interp[m].Er[:,:] = laser_Er[:,:,m]
         saved_Et.append( sim.fld.interp[m].Et.copy() )
-        sim.fld.interp[m].Et[:,:] = laser_Et[:,:,m]
+        if m==0:
+            # Interpolation space is represented by real numbers
+            sim.fld.interp[m].Er[:,:] = laser_Er[:,:,m].real
+            sim.fld.interp[m].Et[:,:] = laser_Et[:,:,m].real
+        else:
+            sim.fld.interp[m].Er[:,:] = laser_Er[:,:,m]
+            sim.fld.interp[m].Et[:,:] = laser_Et[:,:,m]
 
     # Create a global field object across all subdomains, and copy the fields
     # (Calculating the self-consistent Ez and B is a global operation)
@@ -188,10 +193,12 @@ def calculate_laser_fields( fld, fw_propagating ):
     # Filter the fields in spectral space (with smoother+compensator, otherwise
     # the amplitude of the laser can significantly reduced for low resolution)
     dz = fld.interp[0].dz
-    kz_true = 2*np.pi* np.fft.fftfreq( fld.Nz, dz )
-    filter_array = (1. - np.sin(0.5*kz_true*dz)**2) * \
-                   (1. + np.sin(0.5*kz_true*dz)**2)
     for m in range(fld.Nm):
+        if m == 0:
+            kz_true = 2*np.pi* np.fft.rfftfreq( fld.Nz, dz )
+        else:
+            kz_true = 2*np.pi* np.fft.fftfreq( fld.Nz, dz )
+        filter_array = (1. - np.sin(0.5*kz_true*dz)**4)
         spect[m].Ep *= filter_array[:, np.newaxis]
         spect[m].Em *= filter_array[:, np.newaxis]
 

@@ -124,6 +124,14 @@ class Fields(object) :
         dz = (zmax-zmin)/Nz
         z = dz * ( np.arange( 0, Nz ) + 0.5 ) + zmin
 
+        # Create the list of the transformers, which convert the fields
+        # back and forth between the spatial and spectral grid
+        # (one object per azimuthal mode)
+        self.trans = []
+        for m in range(Nm) :
+            self.trans.append( SpectralTransformer(
+                Nz, Nr, m, rmax, use_cuda=self.use_cuda ) )
+
         # Create the interpolation grid for each modes
         # (one grid per azimuthal mode)
         self.interp = [ ]
@@ -134,12 +142,6 @@ class Fields(object) :
             self.interp.append( InterpolationGrid( z, r, m,
                                         use_cuda=self.use_cuda ) )
 
-        # Get the kz and (finite-order) modified kz arrays
-        # (According to FFT conventions, the kz array starts with
-        # positive frequencies and ends with negative frequency.)
-        kz_true = 2*np.pi* np.fft.fftfreq( Nz, dz )
-        kz_modified = get_modified_k( kz_true, n_order, dz )
-
         # Create the spectral grid for each mode, as well as
         # the psatd coefficients
         # (one grid per azimuthal mode)
@@ -148,23 +150,15 @@ class Fields(object) :
         for m in range(Nm) :
             # Extract the inhomogeneous spectral grid for mode m
             kr = 2*np.pi * self.trans[m].dht0.get_nu()
+            dr = self.interp[m].dr
             # Create the object
-            self.spect.append( SpectralGrid( kz_modified, kr, m,
-                kz_true, self.interp[m].dz, self.interp[m].dr,
-                use_cuda=self.use_cuda ) )
+            self.spect.append( SpectralGrid( m, Nz, dz, kr, dr, n_order,
+                                            use_cuda=self.use_cuda ) )
             self.psatd.append( PsatdCoeffs( self.spect[m].kz,
                                 self.spect[m].kr, m, dt,
                                 V=self.v_comoving,
                                 use_galilean=self.use_galilean,
                                 use_cuda=self.use_cuda ) )
-
-        # Create the list of the transformers, which convert the fields
-        # back and forth between the spatial and spectral grid
-        # (one object per azimuthal mode)
-        self.trans = []
-        for m in range(Nm) :
-            self.trans.append( SpectralTransformer( Nz, Nr,
-                self.spect[m].N_kz, m, rmax, use_cuda=self.use_cuda ) )
 
         # Record flags that indicates whether, for the sources *in
         # spectral space*, the guard cells have been exchanged via MPI
@@ -745,49 +739,46 @@ class SpectralGrid(object) :
     Contains the fields and coordinates of the spectral grid.
     """
 
-    def __init__(self, kz_modified, kr, m, kz_true, dz, dr, use_cuda=False ) :
+    def __init__(self, m, Nz, dz, kr, dr, n_order, use_cuda=False ) :
         """
         Allocates the matrices corresponding to the spectral grid
 
         Parameters
         ----------
-        kz_modified : 1darray of float
-            The modified wavevectors of the longitudinal, spectral grid
-            (Different then kz_true in the case of a finite-stencil)
-
-        kr : 1darray of float
-            The wavevectors of the radial, spectral grid
-
-        m : int
+        m: int
             The index of the mode
 
-        kz_true : 1darray of float
-            The true wavevector of the longitudinal, spectral grid
-            (The actual kz that a Fourier transform would give)
+        Nz: int
+            The number of grid points (in interpolation space) in z
 
         dz, dr: float
             The grid spacings (needed to calculate
             precisely the filtering function in spectral space)
 
-        use_cuda : bool, optional
+        kr: 1darray of float
+            The wavevectors of the radial, spectral grid
+
+        n_order : int, optional
+           The order of the stencil for the z derivatives
+
+        use_cuda: bool, optional
             Wether to use the GPU or not
         """
-        # Get array lengths
-        N_kz = len(kz_modified)
-        N_kr = len(kr)
-        # For mode 0, the interpolation space is represented by reals and
-        # thus the spectral space is represented by only the positive kz
+        # Get the array of points in k space, along z
         if m==0:
-            N_kz = int(N_kz/2) + 1
-            # Restrict the kz_modified to the first half (positive kz)
-            assert np.all(kz_modified[:N_kz] >= 0)
-            assert np.all(kz_modified[N_kz:] <= 0)
-            kz_modified = kz_modified[:N_kz]
-            # Restrict the kz_true to the first half (positive kz)
-            assert np.all(kz_true[:N_kz] >= 0)
-            assert np.all(kz_true[N_kz:] <= 0)
-            kz_true = kz_true[:N_kz]
-        # Register the array length
+            # For mode 0, the interpolation space is represented by reals and
+            # thus the spectral space is represented by only the positive kz
+            kz_true = 2*np.pi* np.fft.rfftfreq( Nz, dz )
+            N_kz = int( Nz/2 ) + 1;
+            assert len(kz_true) == N_kz
+        else:
+            kz_true = 2*np.pi* np.fft.fftfreq( Nz, dz )
+            N_kz = Nz
+            assert len(kz_true) == Nz
+        # Get the modified (finite-order) kz
+        kz_modified = get_modified_k( kz_true, n_order, dz )
+        # Register the number of points in k space
+        N_kr = len(kr)
         self.N_kr = N_kr
         self.N_kz = N_kz
         self.m = m

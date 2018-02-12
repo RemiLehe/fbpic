@@ -38,7 +38,7 @@ class SpectralTransformer(object) :
         converts a vector field from the interpolation to the spectral grid
     """
 
-    def __init__(self, Nz, Nr, N_kz, m, rmax, use_cuda=False ) :
+    def __init__(self, Nz, Nr, m, rmax, use_cuda=False ) :
         """
         Initializes the dht and fft attributes, which contain auxiliary
         matrices allowing to transform the fields quickly
@@ -47,12 +47,6 @@ class SpectralTransformer(object) :
         ----------
         Nz, Nr : int
             Number of grid points along z and r respectively
-
-        N_kz: int
-            Number of points in k space, along the z axis
-            (For modes m>0, N_kz is equal to Nz ; but for mode m=0,
-            N_kz is about half of Nz, because the interpolation grid
-            can be represented by real numbers.)
 
         m : int
             Index of the mode (needed for the Hankel transform)
@@ -67,6 +61,14 @@ class SpectralTransformer(object) :
         if self.use_cuda:
             # Initialize the dimension of the grid and blocks
             self.dim_grid, self.dim_block = cuda_tpb_bpg_2d( Nz, Nr)
+
+        # Calculate the number of points in k-space, along the z axis
+        if m==0:
+            # For mode 0, the interpolation space is represented by reals and
+            # thus the spectral space is represented by only the positive kz
+            N_kz = int(Nz/2) + 1
+        else:
+            N_kz = Nz
 
         # Initialize the DHT (local implementation, see hankel.py)
         self.dht0 = DHT(  m, m, Nr, N_kz, rmax, use_cuda=self.use_cuda )
