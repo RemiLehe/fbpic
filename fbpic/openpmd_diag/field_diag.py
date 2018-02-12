@@ -162,11 +162,11 @@ class FieldDiagnostic(OpenPMDDiagnostic):
         else:
             dset = None
 
-        # Write the mode 0 : only the real part is non-zero
+        # Write the mode 0 : data is real
         mode0 = self.get_dataset( quantity, 0 )
         if self.rank == 0:
             mode0 = mode0.T
-            dset[0,:,:] = mode0[:,:].real
+            dset[0,:,:] = mode0[:,:]
         # Write the higher modes
         # There is a factor 2 here so as to comply with the convention in
         # Lifschitz et al., which is also the convention adopted in Warp Circ
@@ -234,7 +234,8 @@ class FieldDiagnostic(OpenPMDDiagnostic):
             The timestep of the simulation
         """
         # Determine the shape of the datasets that will be written
-        # First write real part mode 0, then imaginary part of higher modes
+        # First write mode 0 (real),
+        # then real and imaginary part of higher modes
         data_shape = ( 2*self.fld.Nm - 1, self.fld.Nr, Nz )
 
         # Create the file

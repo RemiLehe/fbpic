@@ -654,8 +654,8 @@ class SliceHandler:
         data_shape = ( 2*fld.Nm-1, fld.Nr )
         output_array = np.empty( data_shape )
 
-        # Get the mode 0 : only the real part is non-zero
-        output_array[0,:] = getattr(fld.interp[0], quantity)[iz_slice,:].real
+        # Get the mode 0 : data is real
+        output_array[0,:] = getattr(fld.interp[0], quantity)[iz_slice,:]
         # Get the higher modes
         # There is a factor 2 here so as to comply with the convention in
         # Lifschitz et al., which is also the convention adopted in FBPIC
