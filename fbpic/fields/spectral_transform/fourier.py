@@ -30,7 +30,8 @@ class FFT(object):
     See the methods `transform` and `inverse transform` for more information
     """
 
-    def __init__(self, Nr, Nz, N_kz, m, use_cuda=False, nthreads=None ):
+    def __init__(self, Nr, Nz, N_kz, interp_data_type, m, 
+                 use_cuda=False, nthreads=None ):
         """
         Initialize an FFT object
 
@@ -44,6 +45,11 @@ class FFT(object):
             (For modes m>0, N_kz is equal to Nz ; but for mode m=0,
             N_kz is about half of Nz, because the interpolation grid
             can be represented by real numbers.)
+
+        interp_data_type: a numpy type
+            Either np.float64 or np.complex128
+            The type of the data on the interpolation grid 
+            (typically float for m=0 and complex for m>0)
 
         m: int
             The index of the azimuthal mode
@@ -85,25 +91,19 @@ class FFT(object):
         # Initialize the object for calculation on the CPU
         else:
 
+            # Initialize dummy arrays for the FFT plan
+            interp_buffer = np.zeros( (Nz, Nr), dtype=interp_data_type )
+            spect_buffer = np.zeros( (N_kz, Nr), dtype=np.complex128 )
+
             # For MKL FFT
             if self.use_mkl:
-                # Initialize the MKL plan with dummy array
-                spect_buffer = np.zeros( (N_kz, Nr), dtype=np.complex128 )
                 self.mklfft = MKLFFT( spect_buffer )
-
             # For FFTW
             else:
                 # Determine number of threads
                 if nthreads is None:
                     # Get the default number of threads for numba
                     nthreads = numba.config.NUMBA_NUM_THREADS
-                # Initialize the FFT plan with dummy arrays
-                if m==0:
-                    interp_data_type = np.float64
-                else:
-                    interp_data_type = np.complex128
-                interp_buffer = np.zeros( (Nz, Nr), dtype=interp_data_type )
-                spect_buffer = np.zeros( (N_kz, Nr), dtype=np.complex128 )
                 self.fft = pyfftw.FFTW( interp_buffer, spect_buffer,
                         axes=(0,), direction='FFTW_FORWARD', threads=nthreads)
                 self.ifft = pyfftw.FFTW( spect_buffer, interp_buffer,

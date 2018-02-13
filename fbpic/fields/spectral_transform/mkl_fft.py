@@ -41,7 +41,7 @@ DFTI_OUTPUT_STRIDES         = ctypes.c_int(13)
 DFTI_INPUT_DISTANCE         = ctypes.c_int(14)
 DFTI_OUTPUT_DISTANCE        = ctypes.c_int(15)
 DFTI_COMPLEX                = ctypes.c_int(32)
-DFTI_SINGLE                 = ctypes.c_int(35)
+DFTI_REAL                   = ctypes.c_int(33)
 DFTI_DOUBLE                 = ctypes.c_int(36)
 DFTI_NOT_INPLACE            = ctypes.c_int(44)
 
@@ -49,7 +49,9 @@ DFTI_NOT_INPLACE            = ctypes.c_int(44)
 class MKLFFT( object ):
     """
     Minimal MKL FFT class that only performs the type of FFT relevant for
-    FBPIC, i.e. from complex128 to complex128, along the axis 0 of a 2D array
+    FBPIC, i.e.
+    - from float64 to complex128, along the axis 0 of a 2D array (for m=0)
+    - from complex128 to complex128, along the axis 0 of a 2D array (for m>0)
 
     Note: the number of thread used is determined by the environment variable
     MKL_NUM_THREADS
@@ -63,14 +65,15 @@ class MKLFFT( object ):
 
         Parameters
         ----------
-        a: 2darray of complex128
+        a: 2darray of float64 or complex128
             Array of the same shape as the ones that will later be
             passed to the methods `transform` and `inverse_transform`
         """
         # Perform a few checks on the array type and shape
         assert a.ndim == 2
-        assert a.dtype == np.complex128
+        assert a.dtype in [ np.complex128, np.float64 ]
         self.shape = a.shape
+
 
         # Prepare the descriptor for the FFT:
         # from complex128 to complex128, along the axis 0 of a 2D array

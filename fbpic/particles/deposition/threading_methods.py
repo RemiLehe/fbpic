@@ -635,7 +635,6 @@ def deposit_J_numba_cubic(x, y, z, w, q,
 # Parallel reduction of the global arrays for threads into a single array
 # -----------------------------------------------------------------------
 
-@njit_parallel
 def sum_reduce_2d_array( global_array, reduced_array, m ):
     """
     Sum the array `global_array` along its first axis and

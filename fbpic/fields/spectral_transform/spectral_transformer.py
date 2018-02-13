@@ -67,16 +67,19 @@ class SpectralTransformer(object) :
             # For mode 0, the interpolation space is represented by reals and
             # thus the spectral space is represented by only the positive kz
             N_kz = int(Nz/2) + 1
+            interp_data_type = np.float64
         else:
             N_kz = Nz
+            interp_data_type = np.complex128
+
+        # Initialize the FFT
+        self.fft = FFT( Nr, Nz, N_kz, interp_data_type, m, 
+                        use_cuda=self.use_cuda )
 
         # Initialize the DHT (local implementation, see hankel.py)
         self.dht0 = DHT(  m, m, Nr, N_kz, rmax, use_cuda=self.use_cuda )
         self.dhtp = DHT(m+1, m, Nr, N_kz, rmax, use_cuda=self.use_cuda )
         self.dhtm = DHT(m-1, m, Nr, N_kz, rmax, use_cuda=self.use_cuda )
-
-        # Initialize the FFT
-        self.fft = FFT( Nr, Nz, N_kz, m, use_cuda=self.use_cuda )
 
         # Initialize the spectral buffers
         if self.use_cuda:
