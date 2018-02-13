@@ -649,11 +649,23 @@ def sum_reduce_2d_array( global_array, reduced_array, m ):
        where the additional 2's in z and r correspond to deposition guard cells
        that were used during the threaded deposition kernel.
 
-    reduced array: 2darray of complex
+    reduced array: 2darray of reals (m=0) or complex (m>0)
       Field array of shape (Nz, Nr)
 
     m: int
        The azimuthal mode for which the reduction should be performed
+    """
+    if m == 0:
+        # Mode 0 is represented by a real array ; hence sum only the real
+        # part of the `global_array`
+        sum_reduce_2d_array_to_real( global_array, reduced_array, m )
+    else:
+        sum_reduce_2d_array_to_complex( global_array, reduced_array, m )
+
+@njit_parallel
+def sum_reduce_2d_array_to_real( global_array, reduced_array, m ):
+    """
+    Sum only the real part of `global_array`
     """
     # Extract size of each dimension
     Nz = reduced_array.shape[0]
@@ -662,15 +674,54 @@ def sum_reduce_2d_array( global_array, reduced_array, m ):
     for iz in prange(Nz):
         # Get index inside reduced_array
         iz_global = iz + 2
-        reduce_slice( reduced_array, iz, global_array, iz_global, m )
+        reduce_slice_to_real( reduced_array, iz, global_array, iz_global, m )
     # Handle deposition guard cells in z
-    reduce_slice( reduced_array, Nz-2, global_array, 0, m )
-    reduce_slice( reduced_array, Nz-1, global_array, 1, m )
-    reduce_slice( reduced_array, 0, global_array, Nz+2, m )
-    reduce_slice( reduced_array, 1, global_array, Nz+3, m )
+    reduce_slice_to_real( reduced_array, Nz-2, global_array, 0, m )
+    reduce_slice_to_real( reduced_array, Nz-1, global_array, 1, m )
+    reduce_slice_to_real( reduced_array, 0, global_array, Nz+2, m )
+    reduce_slice_to_real( reduced_array, 1, global_array, Nz+3, m )
 
 @numba.njit
-def reduce_slice( reduced_array, iz, global_array, iz_global, m ):
+def reduce_slice_to_real( reduced_array, iz, global_array, iz_global, m ):
+    """
+    Sum the array `global_array` into `reduced_array` for one given slice in z
+    """
+    Nreduce = global_array.shape[0]
+    Nr = reduced_array.shape[1]
+    # Loop over the reduction dimension (slow dimension)
+    for it in range( Nreduce ):
+
+        # First fold the low-radius deposition guard cells in
+        reduced_array[iz, 1] += global_array[it, m, iz_global, 0].real
+        reduced_array[iz, 0] += global_array[it, m, iz_global, 1].real
+        # Then loop over regular cells
+        for ir in range( Nr ):
+            reduced_array[iz, ir] +=  global_array[it, m, iz_global, ir+2].real
+        # Finally fold the high-radius guard cells in
+        reduced_array[iz, Nr-1] += global_array[it, m, iz_global, Nr+2].real
+        reduced_array[iz, Nr-1] += global_array[it, m, iz_global, Nr+3].real
+
+@njit_parallel
+def sum_reduce_2d_array_to_complex( global_array, reduced_array, m ):
+    """
+    Sum only the real part of `global_array`
+    """
+    # Extract size of each dimension
+    Nz = reduced_array.shape[0]
+
+    # Parallel loop over z
+    for iz in prange(Nz):
+        # Get index inside reduced_array
+        iz_global = iz + 2
+        reduce_slice_to_complex( reduced_array, iz, global_array, iz_global, m )
+    # Handle deposition guard cells in z
+    reduce_slice_to_complex( reduced_array, Nz-2, global_array, 0, m )
+    reduce_slice_to_complex( reduced_array, Nz-1, global_array, 1, m )
+    reduce_slice_to_complex( reduced_array, 0, global_array, Nz+2, m )
+    reduce_slice_to_complex( reduced_array, 1, global_array, Nz+3, m )
+
+@numba.njit
+def reduce_slice_to_complex( reduced_array, iz, global_array, iz_global, m ):
     """
     Sum the array `global_array` into `reduced_array` for one given slice in z
     """
