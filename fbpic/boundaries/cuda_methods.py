@@ -17,8 +17,8 @@ def copy_vec_to_gpu_buffer( vec_buffer_l, vec_buffer_r,
 
     Parameters
     ----------
-    vec_buffer_l, vec_buffer_r: ndarrays of complexs (device arrays)
-        Arrays of shape (3*Nm, nz_end-nz_start, Nr), which serve as buffer
+    vec_buffer_l, vec_buffer_r: ndarrays of reals (device arrays)
+        Arrays of shape (3, 2*Nm-1, nz_end-nz_start, Nr), which serve as buffer
         for transmission to CPU, and then sending via MPI. They hold the
         values of a vector field in either the ng inner cells of the domain
         or the ng outer + ng inner cells of the domain, to the left and right.
@@ -57,15 +57,23 @@ def copy_vec_to_gpu_buffer( vec_buffer_l, vec_buffer_r,
             # At the left end
             if copy_left:
                 iz_left = nz_start + iz
-                vec_buffer_l[3*m+0, iz, ir] = grid_r[ iz_left, ir ]
-                vec_buffer_l[3*m+1, iz, ir] = grid_t[ iz_left, ir ]
-                vec_buffer_l[3*m+2, iz, ir] = grid_z[ iz_left, ir ]
+                vec_buffer_l[0, 2*m+1, iz, ir] = grid_r[ iz_left, ir ].real
+                vec_buffer_l[1, 2*m+1, iz, ir] = grid_t[ iz_left, ir ].real
+                vec_buffer_l[2, 2*m+1, iz, ir] = grid_z[ iz_left, ir ].real
+                if m > 0:
+                    vec_buffer_l[0, 2*m, iz, ir] = grid_r[ iz_left, ir ].imag
+                    vec_buffer_l[1, 2*m, iz, ir] = grid_t[ iz_left, ir ].imag
+                    vec_buffer_l[2, 2*m, iz, ir] = grid_z[ iz_left, ir ].imag
             # At the right end
             if copy_right:
-                iz_right = Nz - nz_end + iz
-                vec_buffer_r[3*m+0, iz, ir] = grid_r[ iz_right, ir ]
-                vec_buffer_r[3*m+1, iz, ir] = grid_t[ iz_right, ir ]
-                vec_buffer_r[3*m+2, iz, ir] = grid_z[ iz_right, ir ]
+                iz_left = nz_start + iz
+                vec_buffer_l[0, 2*m+1, iz, ir] = grid_r[ iz_right, ir ].real
+                vec_buffer_l[1, 2*m+1, iz, ir] = grid_t[ iz_right, ir ].real
+                vec_buffer_l[2, 2*m+1, iz, ir] = grid_z[ iz_right, ir ].real
+                if m > 0:
+                    vec_buffer_l[0, 2*m, iz, ir] = grid_r[ iz_right, ir ].imag
+                    vec_buffer_l[1, 2*m, iz, ir] = grid_t[ iz_right, ir ].imag
+                    vec_buffer_l[2, 2*m, iz, ir] = grid_z[ iz_right, ir ].imag
 
 
 @cuda.jit
@@ -77,8 +85,8 @@ def copy_scal_to_gpu_buffer( scal_buffer_l, scal_buffer_r, grid, m,
 
     Parameters
     ----------
-    scal_buffer_l, scal_buffer_r: ndarrays of complexs (device arrays)
-        Arrays of shape (Nm, nz_end-nz_start, Nr), which serve as buffer
+    scal_buffer_l, scal_buffer_r: ndarrays of reals (device arrays)
+        Arrays of shape (2*Nm-1, nz_end-nz_start, Nr), which serve as buffer
         for transmission to CPU, and then sending via MPI. They hold the
         values of a scalar field in either the ng inner cells of the domain
         or the ng outer + ng inner cells of the domain, to the left and right.
@@ -116,11 +124,15 @@ def copy_scal_to_gpu_buffer( scal_buffer_l, scal_buffer_r, grid, m,
             # At the left end
             if copy_left:
                 iz_left = nz_start + iz
-                scal_buffer_l[m, iz, ir] = grid[ iz_left, ir ]
+                scal_buffer_l[2*m+1, iz, ir] = grid[ iz_left, ir ].real
+                if m > 0:
+                    scal_buffer_l[2*m, iz, ir] = grid[ iz_left, ir ].imag
             # At the right end
             if copy_right:
                 iz_right = Nz - nz_end + iz
-                scal_buffer_r[m, iz, ir] = grid[ iz_right, ir ]
+                scal_buffer_r[2*m+1, iz, ir] = grid[ iz_right, ir ].real
+                if m > 0:
+                    scal_buffer_r[2*m, iz, ir] = grid[ iz_right, ir ].imag
 
 
 @cuda.jit
@@ -133,8 +145,8 @@ def replace_vec_from_gpu_buffer( vec_buffer_l, vec_buffer_r,
 
     Parameters
     ----------
-    vec_buffer_l, vec_buffer_r: ndarrays of complexs (device arrays)
-        Arrays of shape (3*Nm, nz_end-nz_start, Nr), which are the buffers
+    vec_buffer_l, vec_buffer_r: ndarrays of reals (device arrays)
+        Arrays of shape (3, 2*Nm-1, nz_end-nz_start, Nr), which are the buffers
         sent via MPI and received by the CPU.
 
     grid_r, grid_t, grid_z: ndarrays of complexs (device arrays)
@@ -171,15 +183,23 @@ def replace_vec_from_gpu_buffer( vec_buffer_l, vec_buffer_r,
             # At the left end
             if copy_left:
                 iz_left = iz
-                grid_r[ iz_left, ir ] = vec_buffer_l[3*m+0, iz, ir]
-                grid_t[ iz_left, ir ] = vec_buffer_l[3*m+1, iz, ir]
-                grid_z[ iz_left, ir ] = vec_buffer_l[3*m+2, iz, ir]
+                grid_r[ iz_left, ir ] = vec_buffer_l[0, 2*m+1, iz, ir]
+                grid_t[ iz_left, ir ] = vec_buffer_l[1, 2*m+1, iz, ir]
+                grid_z[ iz_left, ir ] = vec_buffer_l[2, 2*m+1, iz, ir]
+                if m > 0:
+                    grid_r[ iz_left, ir ] += 1.j*vec_buffer_l[0, 2*m, iz, ir]
+                    grid_t[ iz_left, ir ] += 1.j*vec_buffer_l[1, 2*m, iz, ir]
+                    grid_z[ iz_left, ir ] += 1.j*vec_buffer_l[2, 2*m, iz, ir]
             # At the right end
             if copy_right:
                 iz_right = Nz - (nz_end - nz_start) + iz
-                grid_r[ iz_right, ir ] = vec_buffer_r[3*m+0, iz, ir]
-                grid_t[ iz_right, ir ] = vec_buffer_r[3*m+1, iz, ir]
-                grid_z[ iz_right, ir ] = vec_buffer_r[3*m+2, iz, ir]
+                grid_r[ iz_right, ir ] = vec_buffer_r[0, 2*m+1, iz, ir]
+                grid_t[ iz_right, ir ] = vec_buffer_r[1, 2*m+1, iz, ir]
+                grid_z[ iz_right, ir ] = vec_buffer_r[2, 2*m+1, iz, ir]
+                if m > 0:
+                    grid_r[ iz_right, ir ] += 1.j*vec_buffer_l[0, 2*m, iz, ir]
+                    grid_t[ iz_right, ir ] += 1.j*vec_buffer_l[1, 2*m, iz, ir]
+                    grid_z[ iz_right, ir ] += 1.j*vec_buffer_l[2, 2*m, iz, ir]
 
 @cuda.jit
 def replace_scal_from_gpu_buffer( scal_buffer_l, scal_buffer_r, grid, m,
@@ -190,8 +210,8 @@ def replace_scal_from_gpu_buffer( scal_buffer_l, scal_buffer_r, grid, m,
 
     Parameters
     ----------
-    scal_buffer_l, scal_buffer_r: ndarrays of complexs (device arrays)
-        Arrays of shape (2, nz_end-nz_start, Nr), which are the buffers
+    scal_buffer_l, scal_buffer_r: ndarrays of reals (device arrays)
+        Arrays of shape (2*Nm-1, nz_end-nz_start, Nr), which are the buffers
         sent via MPI and received by the CPU.
 
     grid: ndarray of complexs (device arrays)
@@ -227,12 +247,15 @@ def replace_scal_from_gpu_buffer( scal_buffer_l, scal_buffer_r, grid, m,
             # At the left end
             if copy_left:
                 iz_left = iz
-                grid[ iz_left, ir ] = scal_buffer_l[m, iz, ir]
+                grid[ iz_left, ir ] = scal_buffer_l[2*m+1, iz, ir]
+                if m > 0:
+                    grid[ iz_left, ir ] += 1.j * scal_buffer_l[2*m, iz, ir]
             # At the right end
             if copy_right:
                 iz_right = Nz - (nz_end - nz_start) + iz
-                grid[ iz_right, ir ] = scal_buffer_r[m, iz, ir]
-
+                grid[ iz_right, ir ] = scal_buffer_r[2*m+1, iz, ir]
+                if m > 0:
+                    grid[ iz_right, ir ] += 1.j * scal_buffer_l[2*m, iz, ir]
 
 @cuda.jit
 def add_vec_from_gpu_buffer( vec_buffer_l, vec_buffer_r,
@@ -244,8 +267,8 @@ def add_vec_from_gpu_buffer( vec_buffer_l, vec_buffer_r,
 
     Parameters
     ----------
-    vec_buffer_l, vec_buffer_r: ndarrays of complexs (device arrays)
-        Arrays of shape (3*Nm, nz_end-nz_start, Nr), which are the buffers
+    vec_buffer_l, vec_buffer_r: ndarrays of reals (device arrays)
+        Arrays of shape (3, 2*Nm-1, nz_end-nz_start, Nr), which are the buffers
         sent via MPI and received by the CPU.
 
     grid_r, grid_t, grid_z: ndarrays of complexs (device arrays)
@@ -282,15 +305,24 @@ def add_vec_from_gpu_buffer( vec_buffer_l, vec_buffer_r,
             # At the left end
             if copy_left:
                 iz_left = iz
-                grid_r[ iz_left, ir ] += vec_buffer_l[3*m+0, iz, ir]
-                grid_t[ iz_left, ir ] += vec_buffer_l[3*m+1, iz, ir]
-                grid_z[ iz_left, ir ] += vec_buffer_l[3*m+2, iz, ir]
+                grid_r[ iz_left, ir ] += vec_buffer_l[0, 2*m+1, iz, ir]
+                grid_t[ iz_left, ir ] += vec_buffer_l[1, 2*m+1, iz, ir]
+                grid_z[ iz_left, ir ] += vec_buffer_l[2, 2*m+1, iz, ir]
+                if m > 0:
+                    grid_r[ iz_left, ir ] += 1.j*vec_buffer_l[0, 2*m, iz, ir]
+                    grid_t[ iz_left, ir ] += 1.j*vec_buffer_l[1, 2*m, iz, ir]
+                    grid_z[ iz_left, ir ] += 1.j*vec_buffer_l[2, 2*m, iz, ir]
+
             # At the right end
             if copy_right:
                 iz_right = Nz - (nz_end - nz_start) + iz
-                grid_r[ iz_right, ir ] += vec_buffer_r[3*m+0, iz, ir]
-                grid_t[ iz_right, ir ] += vec_buffer_r[3*m+1, iz, ir]
-                grid_z[ iz_right, ir ] += vec_buffer_r[3*m+2, iz, ir]
+                grid_r[ iz_right, ir ] += vec_buffer_r[0, 2*m+1, iz, ir]
+                grid_t[ iz_right, ir ] += vec_buffer_r[1, 2*m+1, iz, ir]
+                grid_z[ iz_right, ir ] += vec_buffer_r[2, 2*m+1, iz, ir]
+                if m > 0:
+                    grid_r[ iz_right, ir ] += 1.j*vec_buffer_l[0, 2*m, iz, ir]
+                    grid_t[ iz_right, ir ] += 1.j*vec_buffer_l[1, 2*m, iz, ir]
+                    grid_z[ iz_right, ir ] += 1.j*vec_buffer_l[2, 2*m, iz, ir]
 
 @cuda.jit
 def add_scal_from_gpu_buffer( scal_buffer_l, scal_buffer_r, grid, m,
@@ -301,8 +333,8 @@ def add_scal_from_gpu_buffer( scal_buffer_l, scal_buffer_r, grid, m,
 
     Parameters
     ----------
-    scal_buffer_l, scal_buffer_r: ndarrays of complexs (device arrays)
-        Arrays of shape (Nm, nz_end-nz_start, Nr), which are the buffers
+    scal_buffer_l, scal_buffer_r: ndarrays of reals (device arrays)
+        Arrays of shape (2*Nm-1, nz_end-nz_start, Nr), which are the buffers
         sent via MPI and received by the CPU.
 
     grid: ndarray of complexs (device arrays)
@@ -338,11 +370,15 @@ def add_scal_from_gpu_buffer( scal_buffer_l, scal_buffer_r, grid, m,
             # At the left end
             if copy_left:
                 iz_left = iz
-                grid[ iz_left, ir ] += scal_buffer_l[m, iz, ir]
+                grid[ iz_left, ir ] += scal_buffer_l[2*m+1, iz, ir]
+                if m > 0:
+                    grid[ iz_left, ir ] += 1.j * scal_buffer_l[2*m, iz, ir]
             # At the right end
             if copy_right:
                 iz_right = Nz - (nz_end - nz_start) + iz
-                grid[ iz_right, ir ] += scal_buffer_r[m, iz, ir]
+                grid[ iz_right, ir ] += scal_buffer_r[2*m+1, iz, ir]
+                if m > 0:
+                    grid[ iz_right, ir ] += 1.j * scal_buffer_l[2*m, iz, ir]
 
 # CUDA damping kernels:
 # --------------------
