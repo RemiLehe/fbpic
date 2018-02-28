@@ -359,13 +359,22 @@ class Particles(object) :
         comm: an fbpic.BoundaryCommunicator object
             Contains information about the number of processors
         """
+        # Check whether a particle tracker was already activated;
+        # if yes, remove it
+        if self.tracker is not None:
+            del self.tracker
+            self.n_integer_quantities -= 1
+            if self.n_integer_quantities == 0:
+                del self.int_sorting_buffer
+
+        # Create or replace particle tracker
         self.tracker = ParticleTracker( comm.size, comm.rank, self.Ntot )
-        # Update the number of integer quantities
         self.n_integer_quantities += 1
         # Allocate the integer sorting buffer if needed
         if hasattr( self, 'int_sorting_buffer' ) is False and self.use_cuda:
             self.int_sorting_buffer = np.empty( self.Ntot, dtype=np.uint64 )
 
+            
     def activate_compton( self, target_species, laser_energy, laser_wavelength,
         laser_waist, laser_ctau, laser_initial_z0, ratio_w_electron_photon=1,
         boost=None ):

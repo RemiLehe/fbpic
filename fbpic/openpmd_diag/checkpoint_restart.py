@@ -97,34 +97,53 @@ def restart_from_checkpoint( sim, iteration=None ):
         '\nPlease install it from https://github.com/openPMD/openPMD-viewer')
 
     # Verify that the restart is valid (only for the first processor)
+    # and check whether the restart involves multiple files (one per rank)
     # (Use the global MPI communicator instead of the `BoundaryCommunicator`,
     # so that this also works for `use_all_ranks=False`)
     if comm.rank == 0:
-        check_restart( sim, iteration )
-    comm.barrier()
+        use_multiple_files = check_restart( sim, iteration )
+    else:
+        use_multiple_files = None
+    if comm.size > 1:
+        use_multiple_files = comm.bcast( use_multiple_files )
 
-    # Choose the name of the directory from which to restart:
-    # one directory per processor
-    checkpoint_dir = 'checkpoints/proc%d/hdf5' %comm.rank
-    ts = OpenPMDTimeSeries( checkpoint_dir )
-    # Select the iteration, and its index
+    # Create the openPMD timeseries object
+    if use_multiple_files:
+        checkpoint_dir = 'checkpoints/proc%d/hdf5' %comm.rank
+    else:
+        # (Note that each rank opens the same files - not ideal at scale!)
+        checkpoint_dir = 'checkpoints/hdf5'
+    ts = OpenPMDTimeSeries( checkpoint_dir, check_all_files=False )
+
+    # Select the iteration and time for restart
     if iteration is None:
         iteration = ts.iterations[-1]
-    # Find the index of the closest iteration
     i_iteration = np.argmin( abs(np.array(ts.iterations) - iteration) )
-
     # Modify parameters of the simulation
     sim.iteration = iteration
-    sim.time = ts.t[ i_iteration ]
+    sim.time = ts.t[i_iteration]
 
-    # Load the particles
-    # Loop through the different species
-    for i in range(len(sim.ptcl)):
-        name = 'species %d' %i
-        load_species( sim.ptcl[i], name, ts, iteration, sim.comm )
-
-    # Record position of grid before restart
-    zmin_old = sim.fld.interp[0].zmin
+    # Shift the position of the grids first (Important since this
+    # is then used for particle selection, when selecting particles)
+    if use_multiple_files:
+        # Use the positions of each local grid to calculate the shift
+        zmin_old, _ = sim.comm.get_zmin_zmax( local=True,
+                with_guard=True, with_damp=True, rank=sim.comm.rank )
+    else:
+        # Use the positions of the global grid to calculate the shift
+        zmin_old, _ = sim.comm.get_zmin_zmax( local=False,
+                with_guard=False, with_damp=False )
+    # Get the corresponding new value from the openPMD file
+    _, info = ts.get_field( 'E', 'r', iteration=iteration )
+    zmin_new = info.zmin - 0.5*info.dz
+    # Shift the reference of the BoundaryCommunicator
+    sim.comm.shift_global_domain_positions( zmin_new - zmin_old )
+    # Use the BoundaryCommunicator to set the positions of each grid
+    zmin_local, zmax_local = sim.comm.get_zmin_zmax( local=True,
+                with_guard=True, with_damp=True, rank=sim.comm.rank )
+    for m in range( sim.fld.Nm ):
+        sim.fld.interp[m].zmin = zmin_local
+        sim.fld.interp[m].zmax = zmax_local
 
     # Load the fields
     # Loop through the different modes
@@ -132,31 +151,59 @@ def restart_from_checkpoint( sim, iteration=None ):
         # Load the fields E and B
         for fieldtype in ['E', 'B']:
             for coord in ['r', 't', 'z']:
-                load_fields( sim.fld.interp[m], fieldtype,
-                             coord, ts, iteration )
-    # Record position after restart (`zmin` is modified by `load_fields`)
-    # and shift the global domain position in the BoundaryCommunicator
-    zmin_new = sim.fld.interp[0].zmin
-    sim.comm.shift_global_domain_positions( zmin_new - zmin_old )
+                load_fields( sim.fld.interp[m], fieldtype, coord, ts,
+                            iteration, sim.comm, use_multiple_files )
+    # When using a single file, guard cells data is not complete.
+    # Thus, guard cells need to be exchanged now.
+    if not use_multiple_files:
+        sim.comm.exchange_fields(sim.fld.interp, 'E', 'replace')
+        sim.comm.exchange_fields(sim.fld.interp, 'B', 'replace')
+
+    # Load the particles
+    # Loop through the different species
+    for i in range(len(sim.ptcl)):
+        name = 'species %d' %i
+        load_species( sim.ptcl[i], name, ts,
+                    iteration, sim.comm, use_multiple_files )
+
 
 def check_restart( sim, iteration ):
-    """Verify that the restart is valid."""
+    """
+    Verify that the restart is valid, and determine whether the
+    restart is from a single file or from multiple file.
 
+    Returns
+    -------
+    use_multiple_files: bool
+        Whether the restart process involves several files (one per MPI rank,
+        in which case this files also includes guard and damp cell)
+        or a single file (one for all MPI ranks, in which case this file
+        only includes the physical grid)
+    """
     # Check that the checkpoint directory exists
     if os.path.exists('./checkpoints') is False:
         raise RuntimeError('The directory ./checkpoints, which is '
          'required to restart a simulation, does not exist.')
 
-    # Infer the number of processors that were used for the checkpoint
-    # and check that it is the same as the current number of processors
-    nproc = 0
-    regex_matcher = re.compile('proc\d+')
+    # Check whether there is an `hdf5` directory in the `checkpoints`
+    # directory. In this case, this interpreted as a single-file restart
+    use_multiple_files = True
     for directory in os.listdir('./checkpoints'):
-        if regex_matcher.match(directory) is not None:
-            nproc += 1
-    if nproc != comm.size:
-        raise RuntimeError('For a valid restart, the current simulation '
-        'should use %d MPI processes.' %nproc)
+        if directory == 'hdf5':
+            # Single-file restart
+            use_multiple_files = False
+            break
+    if use_multiple_files:
+        # Infer the number of processors that were used for the checkpoint
+        # and check that it is the same as the current number of processors
+        nproc = 0
+        regex_matcher = re.compile('proc\d+')
+        for directory in os.listdir('./checkpoints'):
+            if regex_matcher.match(directory) is not None:
+                nproc += 1
+        if nproc != comm.size:
+            raise RuntimeError('For a valid restart, the current simulation '
+            'should use %d MPI processes.' %nproc)
 
     # Check that the moving window was not yet initialized
     if sim.comm.moving_win is not None:
@@ -164,8 +211,11 @@ def check_restart( sim, iteration ):
         'For valid restart, the moving window should be initialized *after*\n'
         'calling `restart_from_checkpoint`.')
 
+    return( use_multiple_files )
 
-def load_fields( grid, fieldtype, coord, ts, iteration ):
+
+def load_fields( grid, fieldtype, coord, ts, iteration,
+                    comm, use_multiple_files ):
     """
     Load the field information from the checkpoint `ts` into
     the InterpolationGrid `grid`.
@@ -186,50 +236,68 @@ def load_fields( grid, fieldtype, coord, ts, iteration ):
 
     iteration: integer
        The iteration of the checkpoint to be loaded.
+
+    comm: a BoundaryCommunicator object
+        Provides information about the simulation's domain decomposition
+
+    use_multiple_files: bool
+        Whether the restart process involves several files (one per MPI rank,
+        in which case this files also includes guard and damp cell)
+        or a single file (one for all MPI ranks, in which case this file
+        only includes the physical grid)
     """
     Nr = grid.Nr
     m = grid.m
+
+    # Compute the indices (in z) from which to get the data,
+    # and to which it should be copied
+    if not use_multiple_files:
+        Nz_local, iz_start_local_domain = comm.get_Nz_and_iz(
+            local=True, with_damp=False, with_guard=False, rank=comm.rank )
+        _, iz_start_local_array = comm.get_Nz_and_iz(
+            local=True, with_damp=True, with_guard=True, rank=comm.rank )
+        iz_min_file = iz_start_local_domain
+        iz_max_file = iz_min_file + Nz_local
+        iz_min_array = iz_start_local_domain - iz_start_local_array
+        iz_max_array = iz_min_array + Nz_local
+    else:
+        Nz_local, _ = comm.get_Nz_and_iz(
+            local=True, with_damp=True, with_guard=True, rank=comm.rank )
+        iz_min_file = iz_min_array = 0
+        iz_max_file = iz_max_array = Nz_local
 
     # Extract the field from the restart file using opmd_viewer
     if m==0:
         field_data, info = ts.get_field( fieldtype, coord,
                                          m=m, iteration=iteration )
         # Select a half-plane and transpose it to conform to FBPIC format
-        field_data = field_data[Nr:,:].T
-    elif m==1:
+        field_data = field_data[Nr:,iz_min_file:iz_max_file].T
+    elif m > 0:
         # Extract the real and imaginary part by selecting the angle
         field_data_real, info = ts.get_field( fieldtype, coord,
                             iteration=iteration, m=m, theta=0)
         field_data_imag, _ = ts.get_field( fieldtype, coord,
                             iteration=iteration, m=m, theta=np.pi/2)
         # Select a half-plane and transpose it to conform to FBPIC format
-        field_data_real = field_data_real[Nr:,:].T
-        field_data_imag = field_data_imag[Nr:,:].T
+        field_data_real = field_data_real[Nr:,iz_min_file:iz_max_file].T
+        field_data_imag = field_data_imag[Nr:,iz_min_file:iz_max_file].T
         # Add the complex and imaginary part to create a complex field
         field_data = field_data_real + 1.j*field_data_imag
-        # For the mode 1, there is an additional factor 0.5 to conform
+        # For higher modes, there is an additional factor 0.5 to conform
         # to FBPIC's field representation (see field_diag.py)
         field_data *= 0.5
 
-    # Affect the extracted field to the simulation
+    # Copy the extracted field to the simulation's array
     if coord is not None:
         field_name = fieldtype+coord
     else:
         field_name = fieldtype
     # Perform a copy from field_data to the field in the simulation
     field = getattr( grid, field_name )
-    field[:,:] = field_data[:,:]
+    field[iz_min_array:iz_max_array,:] = field_data[:,:]
 
-    # Get the new positions of the bounds of the simulation
-    # (and check that the box keeps the same length)
-    length_old = grid.zmax - grid.zmin
-    dz = info.dz
-    grid.zmin = info.zmin - 0.5*dz
-    grid.zmax = info.zmax + 0.5*dz
-    length_new = grid.zmax - grid.zmin
-    assert np.allclose( length_old, length_new )
 
-def load_species( species, name, ts, iteration, comm ):
+def load_species( species, name, ts, iteration, comm, use_multiple_files ):
     """
     Read the species data from the checkpoint `ts`
     and load it into the Species object `species`
@@ -242,7 +310,7 @@ def load_species( species, name, ts, iteration, comm ):
     name: string
         The name of the corresponding species in the checkpoint
 
-    ts: an OpenPMDTimeSeries object
+    ts: an OpenPMDTimeSeries object (or None, for ranks that did not read file)
         Points to the data in the checkpoint
 
     iteration: integer
@@ -250,16 +318,32 @@ def load_species( species, name, ts, iteration, comm ):
 
     comm: an fbpic.BoundaryCommunicator object
         Contains information about the number of procs
+
+    use_multiple_files: bool
+        Whether the restart process involves several files (one per MPI rank,
+        in which case this files also includes guard and damp cell)
+        or a single file (one for all MPI ranks, in which case this file
+        only includes the physical grid)
     """
-    # Get the particles' positions (convert to meters)
-    x, y, z = ts.get_particle(
-                ['x', 'y', 'z'], iteration=iteration, species=name )
-    species.x, species.y, species.z = 1.e-6*x, 1.e-6*y, 1.e-6*z
-    # Get the particles' momenta
-    species.ux, species.uy, species.uz = ts.get_particle(
-        ['ux', 'uy', 'uz' ], iteration=iteration, species=name )
-    # Get the weight (multiply it by the charge to conform with FBPIC)
-    species.w, = ts.get_particle( ['w'], iteration=iteration, species=name )
+    # Load the particles from file
+    # (only the ones that are inside the local physical domain)
+    zmin_local, zmax_local = comm.get_zmin_zmax( local=True,
+            with_guard=False, with_damp=False, rank=comm.rank )
+    x, y, z, ux, uy, uz, w = ts.get_particle(
+                ['x', 'y', 'z', 'ux', 'uy', 'uz', 'w'],
+                select={'z': [zmin_local*1.e6, zmax_local*1.e6]},
+                iteration=iteration, species=name )
+    # Convert positions to meters
+    x, y, z = 1.e-6*x, 1.e-6*y, 1.e-6*z
+    # Set the corresponding particle arrays
+    species.x = x
+    species.y = y
+    species.z = z
+    species.ux = ux
+    species.uy = uy
+    species.uz = uz
+    species.w = w
+
     # Get the inverse gamma
     species.inv_gamma = 1./np.sqrt(
         1 + species.ux**2 + species.uy**2 + species.uz**2 )
@@ -269,7 +353,8 @@ def load_species( species, name, ts, iteration, comm ):
 
     # Check if the particles where tracked
     if "id" in ts.avail_record_components[name]:
-        pid, = ts.get_particle( ['id'], iteration=iteration, species=name )
+        pid, = ts.get_particle( ['id'], iteration=iteration, species=name,
+                        select={'z': [1.e6*zmin_local, 1.e6*zmax_local]} )
         species.track( comm )
         species.tracker.overwrite_ids( pid, comm )
 
