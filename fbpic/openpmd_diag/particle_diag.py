@@ -186,7 +186,7 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
         """
         self.setup_openpmd_component( grp )
 
-    def write_hdf5( self, iteration ) :
+    def write_hdf5( self, iteration, time ) :
         """
         Write an HDF5 file that complies with the OpenPMD standard
 
@@ -194,6 +194,8 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
         ---------
         iteration : int
              The current iteration number of the simulation.
+        time: float (in second)
+            The current time of the simulation
         """
         # Receive data from the GPU if needed
         for species_name in self.species_names_list:

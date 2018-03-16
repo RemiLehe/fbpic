@@ -381,7 +381,7 @@ class Simulation(object):
                 # and write it, if it is the case.
                 # (If needed: bring rho/J from spectral space, where they
                 # were smoothed/corrected, and copy the data from the GPU.)
-                diag.write( self.iteration )
+                diag.write( self.iteration, self.time )
 
             # Main PIC iteration
             # ------------------
@@ -477,7 +477,7 @@ class Simulation(object):
 
             # Write the checkpoints if needed
             for checkpoint in self.checkpoints:
-                checkpoint.write( self.iteration )
+                checkpoint.write( self.iteration, self.time )
 
         # End of the N iterations
         # -----------------------

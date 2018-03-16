@@ -58,14 +58,16 @@ class FieldDiagnostic(OpenPMDDiagnostic):
         self.fieldtypes = fieldtypes
         self.coords = ['r', 't', 'z']
 
-    def write_hdf5( self, iteration ) :
+    def write_hdf5( self, iteration, time ) :
         """
         Write an HDF5 file that complies with the OpenPMD standard
 
         Parameter
         ---------
         iteration : int
-             The current iteration number of the simulation.
+             The current iteration number of the simulation
+        time: float (in second)
+            The current time of the simulation
         """
         # If needed: Bring rho/J from spectral space (where they where
         # smoothed/corrected) to real space
@@ -89,7 +91,6 @@ class FieldDiagnostic(OpenPMDDiagnostic):
 
         # Extract information needed for the openPMD attributes
         dt = self.fld.dt
-        time = iteration * dt
         dz = self.fld.interp[0].dz
         if self.comm is None:
             # No communicator: dump all the present subdomain

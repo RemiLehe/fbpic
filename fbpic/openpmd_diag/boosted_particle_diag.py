@@ -116,7 +116,7 @@ class BoostedParticleDiagnostic(ParticleDiagnostic):
         self.particle_catcher = ParticleCatcher(
             self.gamma_boost, self.beta_boost, self.fld )
 
-    def write( self, iteration ):
+    def write( self, iteration, time ):
         """
         Redefines the method write of the parent class ParticleDiagnostic
 
@@ -124,15 +124,17 @@ class BoostedParticleDiagnostic(ParticleDiagnostic):
         ----------
         iteration : int
             Current iteration of the boosted frame simulation
+        time: float (in second)
+            The current time of the simulation
         """
         # At each timestep, store a slice of the particles in memory buffers
-        self.store_snapshot_slices(iteration)
+        self.store_snapshot_slices(iteration, time)
 
         # Every self.period, write the buffered slices to disk
         if iteration % self.period == 0:
             self.flush_to_disk()
 
-    def store_snapshot_slices( self, iteration ):
+    def store_snapshot_slices( self, iteration, time ):
         """
         Store slices of the particles in the memory buffers of the
         corresponding lab snapshots
@@ -141,13 +143,12 @@ class BoostedParticleDiagnostic(ParticleDiagnostic):
         ----------
         iteration : int
             Current iteration of the boosted frame simulation
+        time: float (in second)
+            The current time of the simulation
         """
         # Find the limits of the local subdomain at this iteration
         zmin_boost = self.fld.interp[0].zmin
         zmax_boost = self.fld.interp[0].zmax
-
-        # Extract the current time in the boosted frame
-        time = iteration * self.dt
 
         # Loop through the labsnapshots
         for snapshot in self.snapshots:

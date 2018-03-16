@@ -111,26 +111,28 @@ class BoostedFieldDiagnostic(FieldDiagnostic):
         # transformation, etc for each slice to be registered in a LabSnapshot
         self.slice_handler = SliceHandler( self.gamma_boost, self.beta_boost )
 
-    def write( self, iteration ):
+    def write( self, iteration, time ):
         """
         Redefines the method write of the parent class FieldDiagnostic
         """
         # At each timestep, store a slices of the fields in memory buffers
-        self.store_snapshot_slices( iteration )
+        self.store_snapshot_slices( iteration, time )
 
         # Every self.period, write the buffered slices to disk
         if iteration % self.period == 0:
             self.flush_to_disk()
 
-    def store_snapshot_slices( self, iteration ):
+    def store_snapshot_slices( self, iteration, time ):
         """
         Store slices of the fields in the memory buffers of the
         corresponding lab snapshots
 
         Parameter
         ---------
-        iteration : int
+        iteration: int
             The current iteration in the boosted frame simulation
+        time: float (in seconds)
+            The current time of the simulation
         """
         # If needed: Bring rho/J from spectral space (where they where
         # smoothed/corrected) to real space
@@ -153,9 +155,6 @@ class BoostedFieldDiagnostic(FieldDiagnostic):
             # If a communicator is provided, remove guard and damp cells
             zmin_boost, zmax_boost = self.comm.get_zmin_zmax(
                 local=True, with_damp=False, with_guard=False, rank=self.rank )
-
-        # Extract the current time in the boosted frame
-        time = iteration * self.fld.dt
 
         # Loop through the labsnapshots
         for snapshot in self.snapshots:

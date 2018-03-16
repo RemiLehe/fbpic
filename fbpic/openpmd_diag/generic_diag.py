@@ -98,7 +98,7 @@ class OpenPMDDiagnostic(object) :
 
         return(f)
 
-    def write( self, iteration ) :
+    def write( self, iteration, time ) :
         """
         Check if the data should be written at this iteration
         (based on iteration) and if yes, write it.
@@ -107,6 +107,8 @@ class OpenPMDDiagnostic(object) :
         ---------
         iteration : int
              The current iteration number of the simulation.
+        time: float (in second)
+            The current time of the simulation
         """
         # Check if the fields should be written at this iteration
         if iteration % self.period == 0 \
@@ -114,7 +116,7 @@ class OpenPMDDiagnostic(object) :
             and iteration < self.iteration_max:
 
             # Write the hdf5 file if needed
-            self.write_hdf5( iteration )
+            self.write_hdf5( iteration, time )
 
     def create_dir( self, dir_path) :
         """
