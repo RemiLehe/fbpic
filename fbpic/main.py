@@ -462,18 +462,21 @@ class Simulation(object):
 
             # Get the MPI-exchanged and damped E and B field in both
             # spectral space and interpolation space
+            # Overlap communications and computation in the process
             # (Since exchange/damp operation is purely along z, spectral fields
             # are updated by doing an iFFT/FFT instead of a full transform)
+            # - Go to partial interpolation space and send the guard cells
             fld.spect2partial_interp('E')
+            self.comm.send_guard_cells(fld.interp, 'E', 'replace')
             fld.spect2partial_interp('B')
-            self.comm.exchange_fields(fld.interp, 'E', 'replace')
-            self.comm.exchange_fields(fld.interp, 'B', 'replace')
-            self.comm.damp_EB_open_boundary( fld.interp )
+            self.comm.send_guard_cells(fld.interp, 'B', 'replace')
+            # - Receive the fields and transform back
+            self.comm.receive_guard_cells(fld.interp, 'E', 'replace')
             fld.partial_interp2spect('E')
+            fld.spect2interp('E')  # Update interpolation space
+            self.comm.receive_guard_cells(fld.interp, 'B', 'replace')
             fld.partial_interp2spect('B')
-            # Get the corresponding fields in interpolation space
-            fld.spect2interp('E')
-            fld.spect2interp('B')
+            fld.spect2interp('B')  # Update interpolation space
 
             # Increment the global time and iteration
             self.time += dt
