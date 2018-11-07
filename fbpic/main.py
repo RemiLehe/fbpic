@@ -461,6 +461,7 @@ class Simulation(object):
                     species.gather_envelope(fld, gather_gradient=False,
                                                  average_a2=True)
                     species.update_inv_gamma()
+                    species.complete_push_p_envelope()
                 #  We go back to the time n dt for the deposition of J and rho
                 if self.use_galilean:
                     self.shift_galilean_boundaries( -dt )
