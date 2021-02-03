@@ -15,7 +15,8 @@ from fbpic.main import Simulation as FBPICSimulation
 from fbpic.fields.smoothing import BinomialSmoother
 from fbpic.lpa_utils.laser import add_laser_pulse, GaussianLaser
 from fbpic.lpa_utils.bunch import add_particle_bunch_gaussian
-from fbpic.openpmd_diag import FieldDiagnostic, ParticleDiagnostic
+from fbpic.openpmd_diag import FieldDiagnostic, ParticleDiagnostic, \
+    BackTransformedFieldDiagnostic, BackTransformedParticleDiagnostic
 
 # Import picmi base class
 from picmistandard import PICMI_Simulation, PICMI_CylindricalGrid
@@ -23,7 +24,8 @@ from picmistandard import PICMI_AnalyticDistribution, PICMI_UniformDistribution,
 from picmistandard import PICMI_PseudoRandomLayout, PICMI_GaussianBunchDistribution
 from picmistandard import PICMI_LaserAntenna, PICMI_GaussianLaser
 from picmistandard import PICMI_Species, PICMI_MultiSpecies
-from picmistandard import PICMI_FieldDiagnostic, PICMI_ParticleDiagnostic
+from picmistandard import PICMI_FieldDiagnostic, PICMI_ParticleDiagnostic, \
+    PICMI_LabFrameFieldDiagnostic, PICMI_LabFrameParticleDiagnostic
 
 # Define a new simulation object for picmi, that derives from PICMI_Simulation
 class Simulation( PICMI_Simulation ):
@@ -71,8 +73,9 @@ class Simulation( PICMI_Simulation ):
         self.fbpic_sim = FBPICSimulation(
             Nz=int(grid.nz), zmin=grid.zmin, zmax=grid.zmax,
             Nr=int(grid.nr), rmax=grid.rmax, Nm=grid.n_azimuthal_modes,
-            dt=dt, use_cuda=True, smoother=smoother, n_order=n_order,
-            boundaries={'z':grid.bc_zmax, 'r':grid.bc_rmax} )
+            dt=dt, use_cuda=True, smoother=smoother, n_order=32,
+            boundaries={'z':grid.bc_zmax, 'r':grid.bc_rmax},
+            gamma_boost=self.gamma_boost )
 
         # Set the moving window
         if grid.moving_window_zvelocity is not None:
@@ -106,7 +109,8 @@ class Simulation( PICMI_Simulation ):
 
         # Inject the laser
         add_laser_pulse( self.fbpic_sim, laser_profile, method='antenna',
-            z0_antenna=injection_method.position[-1] )
+            z0_antenna=injection_method.position[-1],
+            gamma_boost=self.gamma_boost )
 
 
     # Redefine the method `add_species` from the PICMI Simulation class
@@ -221,7 +225,7 @@ class Simulation( PICMI_Simulation ):
                                 sig_r=sig_r0, sig_z=sig_z, n_emit=n_emit,
                                 n_physical_particles=n_physical_particles,
                                 n_macroparticles=layout.n_macroparticles,
-                                zf=zf, tf=tf,
+                                zf=zf, tf=tf, boost=self.fbpic_sim.boost,
                                 initialize_self_field=initialize_self_field )
 
         # - For the case of an empty species
@@ -258,15 +262,31 @@ class Simulation( PICMI_Simulation ):
                     write_dir=diagnostic.write_dir,
                     iteration_min=iteration_min,
                     iteration_max=iteration_max)
+        elif type(diagnostic) == PICMI_LabFrameFieldDiagnostic:
+            diag = BackTransformedFieldDiagnostic(
+                    zmin=diagnostic.grid.zmin,
+                    zmax=diagnostic.grid.zmax,
+                    v_lab=c,
+                    dt_snapshots_lab=diagnostic.dt_snapshots,
+                    Ntot_snapshots_lab=diagnostic.num_snapshots,
+                    gamma_boost=self.gamma_boost,
+                    period=100,
+                    fldobject=self.fbpic_sim.fld,
+                    comm=self.fbpic_sim.comm,
+                    fieldtypes=diagnostic.data_list,
+                    write_dir=diagnostic.write_dir)
         # Register particle diagnostic
-        elif type(diagnostic) == PICMI_ParticleDiagnostic:
+        elif type(diagnostic) in [PICMI_ParticleDiagnostic,
+                                  PICMI_LabFrameParticleDiagnostic]:
             species_dict = {}
             for s in diagnostic.species:
                 if s.name is None:
                     raise ValueError('When using a species in a diagnostic, '
                                       'its name must be set.')
                 species_dict[s.name] = s.fbpic_species
-            diag = ParticleDiagnostic(
+
+            if type(diagnostic) == PICMI_ParticleDiagnostic:
+                diag = ParticleDiagnostic(
                     period=diagnostic.period,
                     species=species_dict,
                     comm=self.fbpic_sim.comm,
@@ -274,6 +294,20 @@ class Simulation( PICMI_Simulation ):
                     write_dir=diagnostic.write_dir,
                     iteration_min=iteration_min,
                     iteration_max=iteration_max)
+            else:
+                diag = BackTransformedParticleDiagnostic(
+                    zmin=diagnostic.grid.zmin,
+                    zmax=diagnostic.grid.zmax,
+                    v_lab=c,
+                    dt_snapshots_lab=diagnostic.dt_snapshots,
+                    Ntot_snapshots_lab=diagnostic.num_snapshots,
+                    gamma_boost=self.gamma_boost,
+                    period=100,
+                    fldobject=self.fbpic_sim.fld,
+                    species=species_dict,
+                    comm=self.fbpic_sim.comm,
+                    particle_data=diagnostic.data_list,
+                    write_dir=diagnostic.write_dir)
 
         # Add it to the FBPIC simulation
         self.fbpic_sim.diags.append( diag )
