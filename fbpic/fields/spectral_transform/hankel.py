@@ -222,10 +222,12 @@ class DHT(object):
             # Convert C-order, complex array `G` to F-order, real `d_in`
             cuda_copy_2dC_to_2dR[self.dim_grid, self.dim_block](G, self.d_in )
             # Call cuBLAS gemm kernel
+            one = np.array(1.0, dtype=self.d_in.dtype)
+            zero = np.array(0.0, dtype=self.d_in.dtype)            
             cublas.dgemm(self.blas, 0, 0, self.Nr, 2*self.Nz, self.Nr,
-                         1, self.d_invM.data.ptr, self.Nr,
+                         one.ctypes.data, self.d_invM.data.ptr, self.Nr,
                             self.d_in.data.ptr, self.Nr,
-                         0, self.d_out.data.ptr, self.Nr)
+                         zero.ctypes.data, self.d_out.data.ptr, self.Nr)
             # Convert the F-order d_out array to the C-order F array
             cuda_copy_2dR_to_2dC[self.dim_grid, self.dim_block]( self.d_out, F )
         else:
