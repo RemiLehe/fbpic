@@ -26,13 +26,7 @@ In order to install FBPIC, follow the steps below:
 
    ::
 
-    module load python/2.7-anaconda
-
--  Install the missing dependencies of FBPIC
-
-   ::
-
-       pip install --upgrade numba llvmlite tbb --user
+    module load python
 
 -  Install FBPIC
 
@@ -65,7 +59,7 @@ Once the job has started, you will directly be logged into the node. Then
 
 ::
 
-    module load python/2.7-anaconda
+    module load python
     python <fbpic_script.py>
 
 Batch job
@@ -85,7 +79,7 @@ and replace the bracketed text by the proper values.
     #SBATCH --time <requested time>
     #SBATCH --nodes <n_nodes>
 
-    module load python/2.7-anaconda
+    module load python
     export NUMBA_THREADING_LAYER=tbb
     export NUMBA_NUM_THREADS=16
     export MKL_NUM_THREADS=16
@@ -97,7 +91,7 @@ Then run:
     ::
 
         sbatch submission_file
- 
+
 
 Visualizing the results through Jupyter
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
