@@ -95,12 +95,25 @@ Then run:
 
 Visualizing the results through Jupyter
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Cori provides access to the cluster via Jupyter, at
-`https://jupyter-dev.nersc.gov <https://jupyter-dev.nersc.gov>`__.
-Once you logged in and opened a Jupyter notebook, you can type in a cell:
+
+In order to install your visualization environment on NERSC, use the following
+commands:
 
 ::
 
-	!pip install openPMD-viewer --user
+    module load python
+    conda create -n openPMD python=3.8 ipykernel
+    source activate openPMD
+    pip install openPMD-viewer
+    python -m ipykernel install --user --name openPMD --display-name openPMD
 
-in order to install `openPMD-viewer <https://github.com/openPMD/openPMD-viewer>`__.
+You can then open a Jupyter notebook through Cori's
+`JupyterHub server <https://jupyter-dev.nersc.gov>`__, and select
+``openPMD`` as the Kernel for the notebook (see the upper-right corner).
+
+You can then use `openPMD-viewer <https://github.com/openPMD/openPMD-viewer>`__
+as usual, e.g.
+::
+
+    %matplotlib inline
+    from openpmd_viewer import OpenPMDTimeSeries
