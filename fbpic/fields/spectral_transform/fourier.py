@@ -16,13 +16,20 @@ if cuda_installed:
     import cupy
     from cupy.cuda import cufft
 
-# Check if the MKL FFT is available
+# Check which FFT to use
+cpu_fft = 'scipy'
 try:
     from .mkl_fft import MKLFFT
-    mkl_installed = True
+    cpu_fft = 'mkl'
 except OSError:
+    pass
+try:
     import pyfftw
-    mkl_installed = False
+    cpu_fft = 'fftw'
+except ModuleNotFoundError:
+    pass
+if cpu_fft == 'scipy':
+    from scipy import fft
 
 class FFT(object):
     """
@@ -59,9 +66,6 @@ class FFT(object):
             print('** Cuda not available for Fourier transform.')
             print('** Performing the Fourier transform on the CPU.')
 
-        # Check whether to use MKL
-        self.use_mkl = mkl_installed
-
         # Initialize the object for calculation on the GPU
         if self.use_cuda:
             # Set optimal number of CUDA threads per block
@@ -81,13 +85,13 @@ class FFT(object):
         # Initialize the object for calculation on the CPU
         else:
             # For MKL FFT
-            if self.use_mkl:
+            if cpu_fft == 'mkl':
                 # Initialize the MKL plan with dummy array
                 spect_buffer = np.zeros( (Nz, Nr), dtype=np.complex128 )
                 self.mklfft = MKLFFT( spect_buffer )
 
             # For FFTW
-            else:
+            elif cpu_fft == 'fftw':
                 # Determine number of threads
                 if nthreads is None:
                     # Get the default number of threads for numba
@@ -124,14 +128,18 @@ class FFT(object):
             # Copy 1D arrays back to 2D array
             cuda_copy_1d_to_2d[self.dim_grid, self.dim_block](
                 self.buffer1d_out, array_out)
-        elif self.use_mkl:
+        elif cpu_fft == 'mkl':
             # Perform the FFT on the CPU using MKL
             self.mklfft.transform( array_in, array_out )
-        else :
+        elif cpu_fft == 'fftw':
             # Perform the FFT on the CPU using FFTW
             self.fft.update_arrays( new_input_array=array_in,
                                     new_output_array=array_out )
             self.fft()
+        elif cpu_fft == 'scipy':
+            # Perform the FFT on the CPU using SciPy
+            array_out[:,:] = fft.fft( array_in, axis=0 )
+
 
     def inverse_transform( self, array_in, array_out ):
         """
@@ -158,11 +166,14 @@ class FFT(object):
             # Copy 1D arrays back to 2D array
             cuda_copy_1d_to_2d[self.dim_grid, self.dim_block](
                 self.buffer1d_out, array_out)
-        elif self.use_mkl:
+        elif cpu_fft == 'mkl':
             # Perform the inverse FFT on the CPU using MKL
             self.mklfft.inverse_transform( array_in, array_out )
-        else :
+        elif cpu_fft == 'fftw':
             # Perform the inverse FFT on the CPU using FFTW
             self.ifft.update_arrays( new_input_array=array_in,
                                     new_output_array=array_out )
             self.ifft()
+        elif cpu_fft == 'scipy':
+            # Perform the FFT on the CPU using SciPy
+            array_out[:,:] = fft.ifft( array_in, axis=0 )

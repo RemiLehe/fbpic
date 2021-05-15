@@ -9,6 +9,7 @@ import sys, time
 from fbpic import __version__
 from fbpic.utils.mpi import MPI, mpi_installed, gpudirect_enabled
 from fbpic.utils.cuda import cuda, cuda_installed, get_uuid
+from fbpic.fields.spectral_transform.fourier import cpu_fft
 if cuda_installed:
     from cupy.cuda.memory import OutOfMemoryError
 # Check if terminal is correctly set to UTF-8 and set progress character
@@ -201,10 +202,7 @@ def print_simulation_setup( sim, verbose_level=1 ):
                     message += '\nThreads: %s' %sim.cpu_threads
                 else:
                     message += '\nCPU multi-threading enabled: No'
-                if sim.fld.trans[0].fft.use_mkl:
-                    message += '\nFFT library: MKL'
-                else:
-                    message += '\nFFT library: pyFFTW'
+                message += '\nFFT library: %s' %cpu_fft
                 node_message = get_cpu_message()
             # Gather the information about where each node runs
             if sim.comm.size > 1:
