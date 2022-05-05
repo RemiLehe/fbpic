@@ -14,6 +14,7 @@ from .particle_charge_and_mass import particle_charge, particle_mass
 # Import relevant fbpic object
 from fbpic.main import Simulation as FBPICSimulation
 from fbpic.fields.smoothing import BinomialSmoother
+from fbpic.lpa_utils.boosted_frame import BoostConverter
 from fbpic.lpa_utils.laser import add_laser_pulse, GaussianLaser
 from fbpic.lpa_utils.bunch import add_particle_bunch_gaussian, add_particle_bunch
 from fbpic.lpa_utils.mirrors import Mirror
@@ -296,7 +297,8 @@ class Simulation( PICMI_Simulation ):
                     boost_positions_in_dens_func=True )
             else:
                 dist = s.initial_distribution
-                uz_m = dist.directed_velocity[-1]
+                uz_m, = self.fbpic_sim.boost.longitudinal_momentum( 
+                            [dist.directed_velocity[-1]] )
                 fbpic_species = self.fbpic_sim.add_new_species(
                     q=s.charge, m=s.mass, n=n0,
                     dens_func=dens_func, p_nz=p_nz, p_nr=p_nr, p_nt=p_nt,
