@@ -296,6 +296,7 @@ class Simulation( PICMI_Simulation ):
                     boost_positions_in_dens_func=True )
             else:
                 dist = s.initial_distribution
+                uz_m = dist.directed_velocity[-1]
                 fbpic_species = self.fbpic_sim.add_new_species(
                     q=s.charge, m=s.mass, n=n0,
                     dens_func=dens_func, p_nz=p_nz, p_nr=p_nr, p_nt=p_nt,
@@ -303,7 +304,8 @@ class Simulation( PICMI_Simulation ):
                     p_zmax=dist.upper_bound[-1] if dist.upper_bound[-1] is not None else +np.inf,
                     p_rmax=dist.upper_bound[0] if dist.upper_bound[0] is not None else +np.inf,
                     continuous_injection=s.initial_distribution.fill_in,
-                    boost_positions_in_dens_func=True )
+                    boost_positions_in_dens_func=True,
+                    uz_m=uz_m )
 
         # - For the case of a Gaussian beam
         elif (type(s.initial_distribution)==PICMI_GaussianBunchDistribution) \
